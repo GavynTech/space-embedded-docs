@@ -1,0 +1,29 @@
+{
+  "id": "flight-software/boot-sequence",
+  "title": "Boot Sequence",
+  "description": "Full content coming soon. This page is part of the Flight Software section.",
+  "source": "@site/docs/flight-software/boot-sequence.mdx",
+  "sourceDirName": "flight-software",
+  "slug": "/flight-software/boot-sequence",
+  "permalink": "/docs/flight-software/boot-sequence",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 8,
+  "frontMatter": {
+    "id": "boot-sequence",
+    "title": "Boot Sequence",
+    "sidebar_label": "Boot Sequence",
+    "sidebar_position": 8
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Data Stores",
+    "permalink": "/docs/flight-software/data-stores"
+  },
+  "next": {
+    "title": "Software Updates",
+    "permalink": "/docs/flight-software/software-updates"
+  }
+}

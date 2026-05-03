@@ -1,0 +1,29 @@
+{
+  "id": "synthesis/watchdog-supervisor",
+  "title": "Watchdog Supervisor",
+  "description": "Full content coming soon. This page is part of the Synthesis section.",
+  "source": "@site/docs/synthesis/watchdog-supervisor.mdx",
+  "sourceDirName": "synthesis",
+  "slug": "/synthesis/watchdog-supervisor",
+  "permalink": "/docs/synthesis/watchdog-supervisor",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 6,
+  "frontMatter": {
+    "id": "watchdog-supervisor",
+    "title": "Watchdog Supervisor",
+    "sidebar_label": "Watchdog Supervisor",
+    "sidebar_position": 6
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "ECC Memory Scrubber",
+    "permalink": "/docs/synthesis/ecc-memory-scrubber"
+  },
+  "next": {
+    "title": "TMR Voter",
+    "permalink": "/docs/synthesis/tmr-voter"
+  }
+}

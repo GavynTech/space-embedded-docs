@@ -1,0 +1,29 @@
+{
+  "id": "flight-software/ground-interface",
+  "title": "Ground Interface",
+  "description": "Full content coming soon. This page is part of the Flight Software section.",
+  "source": "@site/docs/flight-software/ground-interface.mdx",
+  "sourceDirName": "flight-software",
+  "slug": "/flight-software/ground-interface",
+  "permalink": "/docs/flight-software/ground-interface",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 10,
+  "frontMatter": {
+    "id": "ground-interface",
+    "title": "Ground Interface",
+    "sidebar_label": "Ground Interface",
+    "sidebar_position": 10
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Software Updates",
+    "permalink": "/docs/flight-software/software-updates"
+  },
+  "next": {
+    "title": "Overview",
+    "permalink": "/docs/orbital-physics/overview"
+  }
+}

@@ -1,0 +1,242 @@
+---
+id: bare-metal-c
+title: Bare Metal C
+sidebar_label: Bare Metal C
+sidebar_position: 2
+---
+
+# Bare Metal C
+
+Bare metal means no operating system. Your code is the first thing that runs after the processor comes out of reset. There is no kernel to set up the stack, no libc to initialize the heap, no scheduler to give your tasks CPU time. You are in direct control of — and directly responsible for — every cycle.
+
+This is the reality for many spacecraft microcontrollers, CubeSat OBCs, and resource-constrained subsystem controllers.
+
+---
+
+## The Startup Sequence
+
+When a microcontroller powers on or resets, the hardware does a minimal set of things before your code runs:
+
+1. PC (program counter) is loaded from the reset vector
+2. Stack pointer is loaded from the vector table
+3. Execution jumps to the reset handler
+
+Everything else — clock initialization, peripheral setup, BSS clearing, data segment copying — is your responsibility. The reset handler, usually written in assembly or low-level C, handles this before calling `main()`.
+
+**Typical startup sequence:**
+
+```c
+// startup.c — what happens before main()
+
+extern uint32_t _sdata;   // start of .data in RAM (linked symbol)
+extern uint32_t _edata;   // end of .data in RAM
+extern uint32_t _sidata;  // source of .data in FLASH
+extern uint32_t _sbss;    // start of .bss in RAM
+extern uint32_t _ebss;    // end of .bss in RAM
+
+void Reset_Handler(void) {
+    // 1. Copy .data section from FLASH to RAM
+    uint32_t *src = &_sidata;
+    uint32_t *dst = &_sdata;
+    while (dst < &_edata) {
+        *dst++ = *src++;
+    }
+
+    // 2. Zero-initialize .bss section
+    dst = &_sbss;
+    while (dst < &_ebss) {
+        *dst++ = 0U;
+    }
+
+    // 3. Initialize system clocks, PLL, flash wait states
+    SystemInit();
+
+    // 4. Call main
+    main();
+
+    // 5. If main returns (it shouldn't), loop forever
+    while (1);
+}
+```
+
+---
+
+## The Linker Script
+
+The linker script defines the memory map of your target: where FLASH is, where RAM is, and how the different sections of your binary get placed into them.
+
+```ld
+/* linker.ld — STM32F4 example */
+
+MEMORY {
+    FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 1024K
+    RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 192K
+}
+
+SECTIONS {
+    /* Vector table + code + const data → FLASH */
+    .text : {
+        KEEP(*(.isr_vector))   /* vector table must be first */
+        *(.text*)
+        *(.rodata*)
+    } > FLASH
+
+    /* .data initial values stored in FLASH, copied to RAM at startup */
+    .data : {
+        _sdata = .;
+        *(.data*)
+        _edata = .;
+    } > RAM AT > FLASH
+
+    _sidata = LOADADDR(.data);
+
+    /* .bss is zero-initialized RAM — no FLASH storage needed */
+    .bss : {
+        _sbss = .;
+        *(.bss*)
+        *(COMMON)
+        _ebss = .;
+    } > RAM
+
+    /* Stack placed at top of RAM, grows downward */
+    ._stack (NOLOAD) : {
+        . = ALIGN(8);
+        _estack = ORIGIN(RAM) + LENGTH(RAM);
+    } > RAM
+}
+```
+
+**Key concepts:**
+- `.text` — code and read-only data → stored in FLASH, executed in place
+- `.data` — initialized globals → stored in FLASH, copied to RAM at startup
+- `.bss` — zero-initialized globals → RAM only, zeroed by startup code
+- `.stack` — stack space → RAM, grows down from top
+
+---
+
+## The Vector Table
+
+On ARM Cortex-M, the vector table is an array of function pointers placed at address 0x00000000 (or 0x08000000 for STM32, remapped by the boot ROM). The first two entries are the initial stack pointer and the reset handler.
+
+```c
+// vector_table.c
+extern void Reset_Handler(void);
+extern void NMI_Handler(void);
+extern void HardFault_Handler(void);
+// ... more fault handlers ...
+extern void SysTick_Handler(void);
+extern void UART1_IRQHandler(void);
+
+__attribute__((section(".isr_vector")))
+const uint32_t vector_table[] = {
+    (uint32_t)&_estack,           // [0]  initial stack pointer
+    (uint32_t)&Reset_Handler,     // [1]  reset handler
+    (uint32_t)&NMI_Handler,       // [2]  NMI
+    (uint32_t)&HardFault_Handler, // [3]  hard fault
+    0, 0, 0, 0,                   // [4-7] reserved
+    0, 0, 0,                      // [8-10] reserved
+    (uint32_t)&SysTick_Handler,   // [15] SysTick
+    (uint32_t)&UART1_IRQHandler,  // [16] UART1 interrupt
+    // ... more peripheral IRQs ...
+};
+```
+
+---
+
+## Memory-Mapped I/O
+
+On bare metal, you control hardware by reading and writing specific memory addresses. These are defined in the chip's reference manual.
+
+```c
+// Blink an LED on GPIOA pin 5 (STM32F4)
+
+// Base addresses from reference manual
+#define RCC_BASE    0x40023800UL
+#define GPIOA_BASE  0x40020000UL
+
+// Register offsets
+#define RCC_AHB1ENR     (*(volatile uint32_t*)(RCC_BASE   + 0x30))
+#define GPIOA_MODER     (*(volatile uint32_t*)(GPIOA_BASE + 0x00))
+#define GPIOA_ODR       (*(volatile uint32_t*)(GPIOA_BASE + 0x14))
+
+void init_led(void) {
+    // Enable GPIOA clock in RCC
+    RCC_AHB1ENR |= (1U << 0);
+
+    // Configure PA5 as output (MODER bits [11:10] = 01)
+    GPIOA_MODER &= ~(3U << 10);   // clear
+    GPIOA_MODER |=  (1U << 10);   // set to output
+}
+
+void toggle_led(void) {
+    GPIOA_ODR ^= (1U << 5);
+}
+```
+
+Every register access uses `volatile` — without it, the compiler may eliminate the write as "dead code" since the variable is never read back in the same function.
+
+---
+
+## The Main Loop
+
+Bare metal embedded software is typically structured as an infinite loop. There is no OS to schedule tasks — you schedule them yourself.
+
+```c
+int main(void) {
+    // Hardware initialization
+    SystemClock_Config();   // PLL, clock sources
+    GPIO_Init();
+    UART_Init();
+    SPI_Init();
+    Watchdog_Init();
+
+    // Main superloop — runs forever
+    while (1) {
+        // 1 ms tick from SysTick interrupt sets this flag
+        if (tick_1ms_flag) {
+            tick_1ms_flag = 0;
+            run_1ms_tasks();
+        }
+
+        // Less frequent tasks
+        if (tick_10ms_flag) {
+            tick_10ms_flag = 0;
+            run_10ms_tasks();
+        }
+
+        if (tick_100ms_flag) {
+            tick_100ms_flag = 0;
+            run_100ms_tasks();
+        }
+
+        // Kick the watchdog — if this stops, the system resets
+        Watchdog_Kick();
+    }
+}
+```
+
+This is the **superloop** pattern. It is simple, deterministic, and analyzable. For more complex scheduling requirements, see [RTOS](../rtos/overview).
+
+---
+
+## Hard Fault Handler
+
+When something goes catastrophically wrong (null pointer dereference, stack overflow, illegal instruction), the ARM Cortex-M processor fires a HardFault exception. In flight software, you must handle this — and ideally log diagnostic information before resetting.
+
+```c
+void HardFault_Handler(void) {
+    // Capture the fault context from the stack
+    // ARM pushes PC, LR, xPSR, R0-R3, R12 on exception entry
+
+    // Log to non-volatile storage if possible
+    fault_log_write(FAULT_HARD_FAULT, __get_MSP(), __get_PSP());
+
+    // Increment fault counter in persistent RAM (survives warm reset)
+    fault_count++;
+
+    // Reset
+    NVIC_SystemReset();
+}
+```
+
+In production flight software, the hard fault handler is one of the most important functions. It is your last chance to record what went wrong before the watchdog or deliberate reset wipes the volatile state.

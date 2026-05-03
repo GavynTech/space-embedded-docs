@@ -1,0 +1,29 @@
+{
+  "id": "orbital-physics/orbit-propagation",
+  "title": "Orbit Propagation",
+  "description": "Full content coming soon. This page is part of the Orbital Physics section.",
+  "source": "@site/docs/orbital-physics/orbit-propagation.mdx",
+  "sourceDirName": "orbital-physics",
+  "slug": "/orbital-physics/orbit-propagation",
+  "permalink": "/docs/orbital-physics/orbit-propagation",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "id": "orbit-propagation",
+    "title": "Orbit Propagation",
+    "sidebar_label": "Orbit Propagation",
+    "sidebar_position": 3
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Keplerian Orbits",
+    "permalink": "/docs/orbital-physics/keplerian-orbits"
+  },
+  "next": {
+    "title": "Coordinate Frames",
+    "permalink": "/docs/orbital-physics/coordinate-frames"
+  }
+}

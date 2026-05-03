@@ -1,0 +1,130 @@
+/**
+ * Space Embedded Docs — Custom Theme
+ * Color palette: deep space navy + electric blue
+ */
+
+:root {
+  --ifm-color-primary: #0070a8;
+  --ifm-color-primary-dark: #00649a;
+  --ifm-color-primary-darker: #005e91;
+  --ifm-color-primary-darkest: #004d77;
+  --ifm-color-primary-light: #007cb6;
+  --ifm-color-primary-lighter: #0082bf;
+  --ifm-color-primary-lightest: #0093d9;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 112, 168, 0.12);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #00d4ff;
+  --ifm-color-primary-dark: #00bfe6;
+  --ifm-color-primary-darker: #00b5d9;
+  --ifm-color-primary-darkest: #0094b3;
+  --ifm-color-primary-light: #1adaff;
+  --ifm-color-primary-lighter: #26dcff;
+  --ifm-color-primary-lightest: #4de3ff;
+  --ifm-background-color: #0a0e1a;
+  --ifm-background-surface-color: #0f1525;
+  --ifm-navbar-background-color: #080c18;
+  --ifm-footer-background-color: #060a14;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 212, 255, 0.08);
+}
+
+/* Navbar — tighter, darker */
+[data-theme='dark'] .navbar {
+  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+}
+
+/* Sidebar */
+[data-theme='dark'] .theme-doc-sidebar-container {
+  border-right: 1px solid rgba(0, 212, 255, 0.1);
+}
+
+/* Code blocks */
+[data-theme='dark'] .prism-code {
+  background: #0d1117 !important;
+  border: 1px solid rgba(0, 212, 255, 0.08);
+  border-radius: 6px;
+}
+
+/* Inline code */
+[data-theme='dark'] code {
+  background: rgba(0, 212, 255, 0.07);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  color: #7dd3fc;
+}
+
+/* Admonition / callout boxes */
+[data-theme='dark'] .alert {
+  border-left-color: var(--ifm-color-primary);
+}
+
+/* Tables */
+[data-theme='dark'] table tr:nth-child(2n) {
+  background: rgba(0, 212, 255, 0.04);
+}
+
+[data-theme='dark'] table th {
+  background: rgba(0, 212, 255, 0.08);
+  color: #00d4ff;
+}
+
+/* Hero banner */
+.hero--primary {
+  background: linear-gradient(135deg, #060a14 0%, #0a1628 50%, #081020 100%);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+[data-theme='dark'] .hero--primary {
+  background: linear-gradient(135deg, #04080f 0%, #080e1e 50%, #060c18 100%);
+}
+
+/* Star field effect on hero */
+.heroBanner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 80% 10%, rgba(255,255,255,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 50% 60%, rgba(0,212,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 10% 80%, rgba(255,255,255,0.15) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 50%, rgba(255,255,255,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 35% 15%, rgba(0,212,255,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 65% 85%, rgba(255,255,255,0.1) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Feature cards */
+.featureCard {
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: 8px;
+  padding: 1.5rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: rgba(0, 212, 255, 0.02);
+}
+
+[data-theme='dark'] .featureCard:hover {
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.08);
+}
+
+/* Section labels */
+.sectionLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ifm-color-primary);
+  margin-bottom: 0.5rem;
+}
+
+/* Docstring / spec blocks */
+[data-theme='dark'] blockquote {
+  border-left: 3px solid rgba(0, 212, 255, 0.4);
+  background: rgba(0, 212, 255, 0.04);
+  color: #94a3b8;
+}

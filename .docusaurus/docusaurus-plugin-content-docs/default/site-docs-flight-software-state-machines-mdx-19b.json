@@ -1,0 +1,29 @@
+{
+  "id": "flight-software/state-machines",
+  "title": "State Machines",
+  "description": "Full content coming soon. This page is part of the Flight Software section.",
+  "source": "@site/docs/flight-software/state-machines.mdx",
+  "sourceDirName": "flight-software",
+  "slug": "/flight-software/state-machines",
+  "permalink": "/docs/flight-software/state-machines",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 4,
+  "frontMatter": {
+    "id": "state-machines",
+    "title": "State Machines",
+    "sidebar_label": "State Machines",
+    "sidebar_position": 4
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Command & Telemetry",
+    "permalink": "/docs/flight-software/command-telemetry"
+  },
+  "next": {
+    "title": "Fault Management",
+    "permalink": "/docs/flight-software/fault-management"
+  }
+}

@@ -1,0 +1,85 @@
+---
+id: standards-index
+title: Standards Index
+sidebar_label: Standards Index
+sidebar_position: 3
+---
+
+# Standards Index
+
+The standards ecosystem for space software — what each one covers and when it applies.
+
+---
+
+## Software Development Standards
+
+| Standard | Body | Domain | Key Scope |
+|---|---|---|---|
+| **DO-178C** | RTCA | Avionics (also used in space) | Software development and verification process, DAL A–E |
+| **ECSS-E-ST-40** | ESA | Space | Software engineering process for ESA missions |
+| **NPR 7150.2** | NASA | Space | NASA software requirements — Class A–D classification |
+| **MIL-STD-498** | DoD | Defense | Defense software development (largely superseded by IEEE 12207) |
+| **IEEE 12207** | IEEE | General | Software lifecycle processes |
+
+---
+
+## Language / Coding Standards
+
+| Standard | Body | What It Restricts |
+|---|---|---|
+| **MISRA-C:2012** | MISRA | C language subset for safety-critical systems |
+| **MISRA-C++:2008** | MISRA | C++ language subset |
+| **AUTOSAR C++14** | AUTOSAR | C++14 for automotive (increasingly used in space) |
+| **JSF AV C++** | JSF | C++ for avionics/defense (Joint Strike Fighter) |
+| **HIC++ v4.0** | PRQA | High Integrity C++ |
+
+---
+
+## Communication Protocols
+
+| Standard | Body | What It Defines |
+|---|---|---|
+| **CCSDS 133.0-B** | CCSDS | Space Packet Protocol — the standard packet format |
+| **CCSDS 232.0-B** | CCSDS | TC Space Data Link Protocol — command uplink |
+| **CCSDS 132.0-B** | CCSDS | TM Space Data Link Protocol — telemetry downlink |
+| **CCSDS 131.0-B** | CCSDS | TM Synchronization and Channel Coding |
+| **CCSDS 727.0-B** | CCSDS | CFDP — File Delivery Protocol (for file uplink/downlink) |
+| **MIL-STD-1553** | DoD | Avionics bus protocol — deterministic, 1 Mbps |
+| **SpaceWire (ECSS-E-ST-50-12)** | ESA | High-speed spacecraft data bus |
+
+---
+
+## Hardware / Components
+
+| Standard | Body | Domain |
+|---|---|---|
+| **ECSS-Q-ST-60-15** | ESA | Radiation hardness assurance |
+| **MIL-STD-883** | DoD | Microcircuit test methods |
+| **MIL-PRF-38535** | DoD | Qualified Manufacturing List for microcircuits |
+| **MIL-STD-461** | DoD | Electromagnetic compatibility (EMC) |
+
+---
+
+## Testing & Verification
+
+| Standard | Body | Domain |
+|---|---|---|
+| **DO-330** | RTCA | Tool qualification for DO-178C |
+| **ECSS-E-ST-40 (Section 6)** | ESA | Software verification and validation |
+| **IEEE 829** | IEEE | Software test documentation |
+
+---
+
+## Relationship Between Standards
+
+```
+DO-178C ←── Used by NASA missions voluntarily (especially for DAL A/B)
+     ↑
+     │
+ECSS-E-ST-40 ←── ESA-funded missions (Sentinel, BepiColombo, JUICE)
+     ↑
+     │
+NPR 7150.2 ←── All NASA programs (Class A = highest, D = lowest rigor)
+```
+
+For commercial small satellites, most companies apply MISRA-C and internal coding standards without formal DO-178C certification. Certification becomes required when the spacecraft is safety-of-life (crew, life support) or when selling to a customer that requires it (e.g., FAA-regulated launch).

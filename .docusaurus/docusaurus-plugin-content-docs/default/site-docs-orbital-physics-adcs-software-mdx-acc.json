@@ -1,0 +1,29 @@
+{
+  "id": "orbital-physics/adcs-software",
+  "title": "ADCS Software",
+  "description": "Full content coming soon. This page is part of the Orbital Physics section.",
+  "source": "@site/docs/orbital-physics/adcs-software.mdx",
+  "sourceDirName": "orbital-physics",
+  "slug": "/orbital-physics/adcs-software",
+  "permalink": "/docs/orbital-physics/adcs-software",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 6,
+  "frontMatter": {
+    "id": "adcs-software",
+    "title": "ADCS Software",
+    "sidebar_label": "ADCS Software",
+    "sidebar_position": 6
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Attitude Representation",
+    "permalink": "/docs/orbital-physics/attitude-representation"
+  },
+  "next": {
+    "title": "Kalman Filter",
+    "permalink": "/docs/orbital-physics/kalman-filter"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "reference/external-resources",
+  "title": "External Resources",
+  "description": "The authoritative references behind this documentation.",
+  "source": "@site/docs/reference/external-resources.mdx",
+  "sourceDirName": "reference",
+  "slug": "/reference/external-resources",
+  "permalink": "/docs/reference/external-resources",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "id": "external-resources",
+    "title": "External Resources",
+    "sidebar_label": "External Resources",
+    "sidebar_position": 5
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Companies",
+    "permalink": "/docs/reference/companies"
+  }
+}

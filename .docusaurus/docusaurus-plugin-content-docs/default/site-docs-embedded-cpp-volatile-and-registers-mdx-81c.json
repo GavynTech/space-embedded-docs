@@ -1,0 +1,29 @@
+{
+  "id": "embedded-cpp/volatile-and-registers",
+  "title": "Volatile & Registers",
+  "description": "Full content coming soon. This page is part of the Embedded C/C++ section.",
+  "source": "@site/docs/embedded-cpp/volatile-and-registers.mdx",
+  "sourceDirName": "embedded-cpp",
+  "slug": "/embedded-cpp/volatile-and-registers",
+  "permalink": "/docs/embedded-cpp/volatile-and-registers",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "id": "volatile-and-registers",
+    "title": "Volatile & Registers",
+    "sidebar_label": "Volatile & Registers",
+    "sidebar_position": 5
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Memory Management",
+    "permalink": "/docs/embedded-cpp/memory-management"
+  },
+  "next": {
+    "title": "Interrupt-Driven Design",
+    "permalink": "/docs/embedded-cpp/interrupt-driven-design"
+  }
+}

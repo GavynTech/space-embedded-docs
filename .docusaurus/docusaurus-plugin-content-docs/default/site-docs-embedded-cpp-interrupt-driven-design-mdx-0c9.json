@@ -1,0 +1,29 @@
+{
+  "id": "embedded-cpp/interrupt-driven-design",
+  "title": "Interrupt-Driven Design",
+  "description": "Full content coming soon. This page is part of the Embedded C/C++ section.",
+  "source": "@site/docs/embedded-cpp/interrupt-driven-design.mdx",
+  "sourceDirName": "embedded-cpp",
+  "slug": "/embedded-cpp/interrupt-driven-design",
+  "permalink": "/docs/embedded-cpp/interrupt-driven-design",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 6,
+  "frontMatter": {
+    "id": "interrupt-driven-design",
+    "title": "Interrupt-Driven Design",
+    "sidebar_label": "Interrupt-Driven Design",
+    "sidebar_position": 6
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Volatile & Registers",
+    "permalink": "/docs/embedded-cpp/volatile-and-registers"
+  },
+  "next": {
+    "title": "Fixed-Point Math",
+    "permalink": "/docs/embedded-cpp/fixed-point-math"
+  }
+}

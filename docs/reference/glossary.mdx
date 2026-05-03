@@ -1,0 +1,268 @@
+---
+id: glossary
+title: Aerospace Glossary
+sidebar_label: Glossary
+sidebar_position: 2
+---
+
+# Aerospace Glossary
+
+Aerospace has more acronyms per sentence than any other field. This is the reference.
+
+---
+
+## A
+
+**ADCS** — Attitude Determination and Control System. The subsystem responsible for determining the spacecraft's orientation and commanding actuators to achieve a desired attitude.
+
+**AGC** — Automatic Gain Control. Receiver circuit that adjusts signal amplification based on incoming signal strength.
+
+**AIT** — Assembly, Integration, and Test. The process of assembling spacecraft components, integrating subsystems, and testing the complete system.
+
+**AOS** — Acquisition of Signal. The moment a ground station establishes communication with a spacecraft.
+
+**AOCS** — Attitude and Orbit Control System. European term for what Americans call ADCS, sometimes extended to include orbit maneuver capability.
+
+---
+
+## B
+
+**Bdot** — Rate-based detumble control law. Applies magnetic torque proportional to the rate of change of the measured magnetic field. Simple, reliable, requires only a magnetometer and magnetorquers. Used as initial detumble mode after deployment.
+
+**BOL** — Beginning of Life. Performance specifications at time of launch, before any degradation.
+
+**BSS** — Block Started by Symbol. Memory section for zero-initialized global and static variables.
+
+---
+
+## C
+
+**CCSDS** — Consultative Committee for Space Data Systems. International organization that defines space communication standards. CCSDS packets are the standard format for spacecraft command and telemetry.
+
+**CDH** — Command and Data Handling. The subsystem responsible for processing commands and managing onboard data.
+
+**CEI** — Contract End Item. A deliverable defined in a government contract.
+
+**CMG** — Control Moment Gyroscope. High-torque attitude actuator used on large spacecraft (ISS). Distinct from reaction wheels.
+
+**CoG / CoM** — Center of Gravity / Center of Mass.
+
+---
+
+## D
+
+**DAL** — Development Assurance Level. DO-178C classification (A–E) indicating required rigor of software development based on severity of failure consequence.
+
+**DRAM** — Dynamic RAM. Volatile memory requiring periodic refresh. More susceptible to SEUs than SRAM. Rarely used in space for critical data.
+
+**DSN** — Deep Space Network. NASA's network of large ground antennas supporting interplanetary missions.
+
+---
+
+## E
+
+**ECSS** — European Cooperation for Space Standardization. Body that produces space standards including ECSS-E-ST-40 for software.
+
+**EDAC** — Error Detection and Correction. Hardware implementation of ECC for memory. Often used interchangeably with ECC.
+
+**ECI** — Earth Centered Inertial. Coordinate frame with origin at Earth's center, non-rotating, X toward vernal equinox.
+
+**ECEF** — Earth Centered Earth Fixed. Rotating with Earth. Used for GPS and ground station coordinates.
+
+**EKF** — Extended Kalman Filter. Nonlinear extension of the Kalman filter, used for attitude and orbit estimation.
+
+**EOL** — End of Life. Performance specifications at end of mission.
+
+**EPS** — Electrical Power System. Subsystem managing solar panels, batteries, and power distribution.
+
+---
+
+## F
+
+**FDIR** — Fault Detection, Isolation, and Recovery. The autonomous fault management system.
+
+**FEC** — Forward Error Correction. Error correction codes applied to transmitted data so the receiver can correct errors without retransmission.
+
+**FOV** — Field of View.
+
+**FSW / FSW** — Flight Software.
+
+---
+
+## G
+
+**GCR** — Galactic Cosmic Ray. High-energy particles from outside the solar system.
+
+**GEO** — Geostationary Earth Orbit. ~35,786 km altitude, orbital period = 24 hours, appears stationary from ground.
+
+**GOES** — Geostationary Operational Environmental Satellite. NOAA weather satellites.
+
+**GPS** — Global Positioning System. Also refers to the time system: GPS time = TAI − 19 seconds, does not include leap seconds.
+
+---
+
+## H
+
+**HGA** — High Gain Antenna. Directional antenna providing high data rate but narrow beam — must be pointed.
+
+**HIL / HITL** — Hardware-in-the-Loop testing. Test configuration where real hardware is included in the test loop.
+
+**HSM** — Hierarchical State Machine. State machine where states can have sub-states, with entry/exit/transition actions.
+
+**HK / Housekeeping** — Periodic telemetry of spacecraft health data (temperatures, voltages, currents, mode).
+
+---
+
+## I
+
+**IMU** — Inertial Measurement Unit. Sensor combining gyroscopes and accelerometers.
+
+**IPC** — Inter-Process Communication. Mechanisms for tasks/processes to share data (queues, semaphores, shared memory).
+
+**ISL** — Inter-Satellite Link. Communication link between satellites in a constellation.
+
+**ISR** — Interrupt Service Routine. Code that executes in response to a hardware interrupt.
+
+---
+
+## K
+
+**Keplerian Elements** — Six orbital elements that uniquely define an orbit: semi-major axis (a), eccentricity (e), inclination (i), RAAN (Ω), argument of periapsis (ω), true anomaly (ν).
+
+---
+
+## L
+
+**LEO** — Low Earth Orbit. Roughly 200–2,000 km altitude.
+
+**LOS** — Loss of Signal. When a ground station loses contact with a spacecraft.
+
+**LV** — Launch Vehicle.
+
+**LVLH** — Local Vertical Local Horizontal. Spacecraft-centered coordinate frame where Z points toward Earth center, X along velocity vector.
+
+---
+
+## M
+
+**MEO** — Medium Earth Orbit. 2,000–35,786 km.
+
+**MET** — Mission Elapsed Time. Time since spacecraft separation from launch vehicle.
+
+**MMIO** — Memory-Mapped I/O. Hardware registers addressed as memory locations.
+
+**MTQ / MTR** — Magnetorquer. Coil that generates a magnetic dipole, used with Earth's magnetic field for attitude control.
+
+---
+
+## N
+
+**NADIR** — Direction pointing toward Earth's center from the spacecraft.
+
+**NAND / NOR flash** — Non-volatile storage technology. NAND is denser (used for data storage), NOR is byte-addressable (used for code execution).
+
+---
+
+## O
+
+**OBC** — On-Board Computer. The main flight computer.
+
+**OSAL** — OS Abstraction Layer. NASA cFS component that provides RTOS-independent API.
+
+**OBSW** — On-Board Software. European term for flight software.
+
+---
+
+## P
+
+**PID** — Proportional-Integral-Derivative. Common control law.
+
+**PSP** — Platform Support Package. NASA cFS component providing board-specific abstraction.
+
+**PTT** — Pass-Through Telemetry. Raw data relayed without processing.
+
+---
+
+## Q
+
+**Quaternion** — 4-element rotation representation. Preferred for spacecraft attitude because it has no singularities.
+
+---
+
+## R
+
+**RAAN** — Right Ascension of Ascending Node. Orbital element defining the orientation of the orbital plane relative to the vernal equinox.
+
+**RAD750** — Radiation-hardened PowerPC processor from BAE Systems. The most widely used space processor for high-reliability missions.
+
+**RW** — Reaction Wheel. Electric motor with a flywheel. Stores angular momentum to control spacecraft attitude.
+
+**RTOS** — Real-Time Operating System.
+
+---
+
+## S
+
+**SAA** — South Atlantic Anomaly. Region over the South Atlantic where the inner Van Allen belt dips closest to Earth's surface. Highest SEU rates for LEO spacecraft.
+
+**SBand** — Frequency band (2–4 GHz). Commonly used for spacecraft telemetry and command.
+
+**SB** — Software Bus (in cFS context).
+
+**SEE** — Single Event Effect. Radiation-induced effect in electronics.
+
+**SEL** — Single Event Latchup. Destructive radiation effect.
+
+**SEU** — Single Event Upset. Non-destructive bit flip from radiation.
+
+**SGP4** — Simplified General Perturbations model 4. Standard algorithm for propagating satellite TLEs.
+
+**SRAM** — Static RAM. Volatile, fast memory used for program data. More radiation-tolerant than DRAM.
+
+**SSO** — Sun-Synchronous Orbit. Polar orbit precessing at the same rate the Earth orbits the Sun — the spacecraft always crosses the equator at the same local solar time.
+
+---
+
+## T
+
+**TAI** — International Atomic Time. Continuous time scale, no leap seconds.
+
+**TBL** — Table (in cFS context). Configurable data structure updatable via uplink.
+
+**TID** — Total Ionizing Dose. Cumulative radiation damage over mission life.
+
+**TLE** — Two-Line Element set. Standardized format for encoding Keplerian orbital elements.
+
+**TMR** — Triple Modular Redundancy.
+
+**TT&C** — Telemetry, Tracking, and Command.
+
+---
+
+## U
+
+**UHF** — Ultra High Frequency (300 MHz – 3 GHz). Used for backup command uplink, CubeSat communications.
+
+**UTC** — Coordinated Universal Time. Civil time standard, includes leap seconds.
+
+---
+
+## V
+
+**VSCMG** — Variable Speed Control Moment Gyroscope.
+
+**VxWorks** — Commercial RTOS by Wind River, widely used in avionics and spacecraft.
+
+---
+
+## W
+
+**WCET** — Worst-Case Execution Time. Maximum time a function or task can take to execute, used in real-time scheduling analysis.
+
+**WMM** — World Magnetic Model. NOAA/BGS model of Earth's magnetic field. Used by ADCS software to determine expected magnetometer reading given position and time.
+
+---
+
+## X
+
+**Xband** — Frequency band (8–12 GHz). Used for high-rate data downlink from imaging satellites.

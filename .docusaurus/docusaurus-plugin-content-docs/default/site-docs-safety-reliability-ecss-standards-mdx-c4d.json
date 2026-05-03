@@ -1,0 +1,29 @@
+{
+  "id": "safety-reliability/ecss-standards",
+  "title": "ECSS Standards",
+  "description": "Full content coming soon. This page is part of the Safety & Reliability section.",
+  "source": "@site/docs/safety-reliability/ecss-standards.mdx",
+  "sourceDirName": "safety-reliability",
+  "slug": "/safety-reliability/ecss-standards",
+  "permalink": "/docs/safety-reliability/ecss-standards",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "id": "ecss-standards",
+    "title": "ECSS Standards",
+    "sidebar_label": "ECSS Standards",
+    "sidebar_position": 3
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "DO-178C",
+    "permalink": "/docs/safety-reliability/do-178c"
+  },
+  "next": {
+    "title": "Static Analysis",
+    "permalink": "/docs/safety-reliability/static-analysis"
+  }
+}

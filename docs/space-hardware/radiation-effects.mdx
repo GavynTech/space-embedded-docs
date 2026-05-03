@@ -1,0 +1,154 @@
+---
+id: radiation-effects
+title: Radiation Effects on Electronics
+sidebar_label: Radiation Effects
+sidebar_position: 2
+---
+
+# Radiation Effects on Electronics
+
+The space radiation environment is the most consequential physical constraint for spacecraft software engineers. Every architectural decision about fault tolerance, memory scrubbing, redundancy, and safe mode exists in response to radiation.
+
+Understanding the physics is not optional — it tells you what you're designing against.
+
+---
+
+## The Particle Environment
+
+Three primary sources:
+
+**Van Allen Radiation Belts**
+Trapped protons and electrons orbiting Earth. Two distinct belts: inner belt (protons, ~1,000–6,000 km altitude) and outer belt (electrons, ~13,000–60,000 km). LEO sits inside or below the belts but still experiences significant flux, especially at high inclinations (polar orbit passes through the South Atlantic Anomaly).
+
+**Galactic Cosmic Rays (GCR)**
+High-energy heavy ions from outside the solar system. Constant flux, low particle rate but very high energy per particle. The most damaging single-event effect source. Cannot be shielded cost-effectively — even thick aluminum only increases dose by slowing protons while generating secondary X-rays.
+
+**Solar Energetic Particles (SEP)**
+Protons and heavy ions ejected during solar flares and coronal mass ejections. Highly variable — a major SEP event can increase radiation dose by 2–3 orders of magnitude for hours to days. Most mission designers plan for a worst-case SEP event occurring once per mission lifetime.
+
+---
+
+## Single Event Effects (SEE)
+
+### Single Event Upset (SEU)
+
+A high-energy particle passes through a memory cell, deposits charge, and flips the stored bit. The cell itself is not damaged — the flip is "soft" and a rewrite restores correct operation.
+
+**Rate:** In LEO at moderate inclination, a modern 32-bit processor experiences roughly 10–100 SEUs per day in unprotected SRAM.
+
+**Software impact:**
+- A variable storing a spacecraft mode could flip from NOMINAL to SAFE_MODE (or vice versa)
+- A control law coefficient could change sign
+- A pointer could point to the wrong memory location
+- A jump table entry could redirect execution to arbitrary code
+
+**Mitigation:**
+- ECC (Error Correcting Code) memory — hardware detects and corrects 1-bit errors, detects 2-bit errors
+- Memory scrubbing — periodically read and rewrite all memory to correct soft errors before they accumulate
+- Critical variable redundancy — store important values in triplicate
+
+### Single Event Latchup (SEL)
+
+A particle triggers a parasitic PNPN thyristor structure in CMOS silicon. Once latched, the device draws excessive current and will burn out unless power is cycled within milliseconds.
+
+**Rate:** Less common than SEU, but far more serious. Some devices are inherently latch-up immune (SOI process, BiCMOS) — rad-hard parts are designed to eliminate the parasitic structure.
+
+**Software impact:**
+- The affected device stops responding
+- The board may power off unexpectedly
+- If the OBC itself latches up, the spacecraft loses all software execution
+
+**Mitigation:**
+- Use radiation-hardened (rad-hard) or radiation-tolerant components — latch-up immune by design
+- Hardware current monitors that can cut power and cycle it back (latch-up protection circuit)
+- Watchdog timers — if the OBC locks up, the watchdog fires and resets the system
+
+```c
+// Latchup recovery in power management firmware
+void check_subsystem_current(void) {
+    for (int i = 0; i < NUM_SUBSYSTEMS; i++) {
+        float current_mA = read_current_sensor(i);
+
+        if (current_mA > subsystem_limits[i].latchup_threshold_mA) {
+            // Probable latchup — cut power and wait
+            log_event(EVENT_LATCHUP_DETECTED, i, (uint32_t)current_mA);
+            power_subsystem_off(i);
+            delay_ms(500);           // allow latch to release
+            power_subsystem_on(i);   // restore power
+
+            subsystem_latchup_count[i]++;
+
+            // If repeated latchups, leave subsystem off and alert FDIR
+            if (subsystem_latchup_count[i] > MAX_LATCHUP_RETRIES) {
+                power_subsystem_off(i);
+                fdir_report_anomaly(ANOMALY_PERSISTENT_LATCHUP, i);
+            }
+        }
+    }
+}
+```
+
+### Single Event Functional Interrupt (SEFi)
+
+A particle corrupts a configuration register, mode register, or internal state machine of a complex device (FPGA, processor, memory controller). The device enters an unexpected state and may require a reset to recover.
+
+Common in FPGAs — configuration memory is especially vulnerable. See [FPGAs in Space](./fpga-in-space) for FPGA-specific mitigation.
+
+### Single Event Transient (SET)
+
+A particle causes a voltage glitch in combinational logic (not a storage element). In sequential circuits, the glitch may be latched on a clock edge, causing a logic error. In analog circuits, it causes a transient on a signal line.
+
+---
+
+## Total Ionizing Dose (TID)
+
+Cumulative damage from ionizing radiation absorbed over the mission lifetime. Unlike SEEs, TID is a gradual degradation of device characteristics.
+
+**Effects:**
+- Threshold voltage shift in MOSFETs — can cause logic cells to fail to switch
+- Increased leakage current — raises power consumption and heat
+- Gain degradation in bipolar transistors
+- Oxide charging in gate oxides
+
+**Measurement:** krad(Si) — killorads absorbed in silicon equivalent
+
+**Typical values:**
+| Orbit | Annual Dose | 5-Year Mission |
+|---|---|---|
+| LEO (500 km, 28°) | 0.5–2 krad/yr | 2.5–10 krad |
+| LEO (550 km, 98° polar) | 3–10 krad/yr | 15–50 krad |
+| GEO (35,786 km) | 5–20 krad/yr | 25–100 krad |
+| Interplanetary | Variable, can be very high | Mission dependent |
+
+**Software implication:** TID doesn't directly affect software, but it degrades hardware reliability over time. Flight software should log total-dose estimates and flag components that may be approaching TID limits.
+
+---
+
+## The SEU Rate Calculation
+
+For a memory array:
+
+$$\text{SEU rate} = \sigma_{LET} \times \Phi$$
+
+Where $\sigma_{LET}$ is the device cross-section (cm²/bit) at a given LET threshold, and $\Phi$ is the particle flux (particles/cm²/s).
+
+For COTS SRAM at 65 nm technology in LEO:
+- Cross-section: ~10⁻¹⁴ cm²/bit typical
+- Flux at 550 km: ~10⁴ particles/cm²/s (trapped protons + GCR)
+- 1 MB = 8 × 10⁶ bits
+- Rate: ≈ 0.8 upsets/day
+
+This is why scrubbing is necessary — at this rate, an unprotected 1 MB memory accumulates multiple soft errors per day.
+
+---
+
+## Practical Summary for Software Engineers
+
+| Threat | Rate | What Breaks | Your Defense |
+|---|---|---|---|
+| SEU | 10–100/day (unprotected) | Bits in RAM, registers | ECC, scrubbing, redundancy |
+| SEL | Rare but possible | Power consumption, device death | Rad-hard parts, current monitors, WDT |
+| SEFi | Occasional (FPGAs) | FPGA configuration | Periodic reconfiguration, scrubbing |
+| TID | Cumulative | Device parametrics over years | Rad-hard parts, design margins |
+
+The baseline requirement for any spacecraft processor: ECC-protected RAM, a hardware watchdog, and a memory scrubbing task.

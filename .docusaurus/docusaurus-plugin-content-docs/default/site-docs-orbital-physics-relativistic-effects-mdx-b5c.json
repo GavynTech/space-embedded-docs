@@ -1,0 +1,29 @@
+{
+  "id": "orbital-physics/relativistic-effects",
+  "title": "Relativistic Effects",
+  "description": "Full content coming soon. This page is part of the Orbital Physics section.",
+  "source": "@site/docs/orbital-physics/relativistic-effects.mdx",
+  "sourceDirName": "orbital-physics",
+  "slug": "/orbital-physics/relativistic-effects",
+  "permalink": "/docs/orbital-physics/relativistic-effects",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 9,
+  "frontMatter": {
+    "id": "relativistic-effects",
+    "title": "Relativistic Effects",
+    "sidebar_label": "Relativistic Effects",
+    "sidebar_position": 9
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Time Systems",
+    "permalink": "/docs/orbital-physics/time-systems"
+  },
+  "next": {
+    "title": "Link Budget",
+    "permalink": "/docs/orbital-physics/link-budget"
+  }
+}

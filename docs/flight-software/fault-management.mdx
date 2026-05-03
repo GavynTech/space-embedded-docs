@@ -1,0 +1,235 @@
+---
+id: fault-management
+title: Fault Management (FDIR)
+sidebar_label: Fault Management
+sidebar_position: 5
+---
+
+# Fault Management (FDIR)
+
+Fault Detection, Isolation, and Recovery (FDIR) is the system that keeps a spacecraft alive when things go wrong — and things always go wrong.
+
+A spacecraft in orbit cannot call a support line. It cannot be rebooted by an operator. When a hardware component fails, a software bug manifests, or radiation corrupts state, the spacecraft must detect the problem, isolate the affected subsystem, and recover to a safe operating state — autonomously, within seconds.
+
+---
+
+## The Three Levels
+
+FDIR operates at three levels, each faster and more drastic than the last:
+
+### Level 1 — Component Level (milliseconds)
+Individual subsystems monitor themselves and attempt self-recovery.
+
+```c
+// Example: UART driver with auto-retry
+static bool uart_send_with_retry(const uint8_t* data, size_t len) {
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (uart_transmit(data, len, UART_TIMEOUT_MS) == UART_OK) {
+            return true;
+        }
+        log_event(EVENT_UART_RETRY, attempt, 0);
+        uart_reset();   // reset peripheral and try again
+    }
+    // Level 1 exhausted — escalate to Level 2
+    fdir_report_anomaly(ANOMALY_UART_PERSISTENT_FAILURE, UART_COMMS);
+    return false;
+}
+```
+
+### Level 2 — Subsystem Level (seconds)
+The FDIR system receives anomaly reports and applies subsystem-level responses.
+
+### Level 3 — Spacecraft Level (minutes)
+If anomalies escalate, the spacecraft transitions to **safe mode** — a minimal, low-power configuration designed to survive indefinitely while waiting for ground contact.
+
+---
+
+## Anomaly Reporting
+
+All software components report faults to a central FDIR service through a standardized interface:
+
+```c
+// Anomaly IDs — defines what went wrong
+typedef enum {
+    ANOMALY_NONE                  = 0,
+    ANOMALY_IMU_FAILURE           = 1,
+    ANOMALY_MAGNETOMETER_FAILURE  = 2,
+    ANOMALY_RW_SPEED_LIMIT        = 3,
+    ANOMALY_ECC_UNCORRECTABLE     = 4,
+    ANOMALY_TMR_FAILURE           = 5,
+    ANOMALY_COMMAND_AUTH_FAIL     = 6,
+    ANOMALY_POWER_UNDERVOLTAGE    = 7,
+    ANOMALY_COMMS_LINK_LOST       = 8,
+    ANOMALY_WATCHDOG_IMPENDING    = 9,
+    ANOMALY_HIGH_CE_RATE          = 10,
+    ANOMALY_LATCHUP_DETECTED      = 11,
+    ANOMALY_PERSISTENT_LATCHUP    = 12,
+    // ...
+    ANOMALY_COUNT
+} AnomalyID_t;
+
+// Severity determines FDIR response speed
+typedef enum {
+    SEVERITY_INFO      = 0,   // log only — no action
+    SEVERITY_WARNING   = 1,   // log + telemetry alert
+    SEVERITY_FAULT     = 2,   // active recovery attempt
+    SEVERITY_CRITICAL  = 3,   // immediate safe mode
+} AnomalySeverity_t;
+
+typedef struct {
+    AnomalyID_t       id;
+    AnomalySeverity_t severity;
+    uint32_t          param1;
+    uint32_t          param2;
+    uint64_t          timestamp_us;
+} AnomalyReport_t;
+
+// Thread-safe reporting — can be called from any task or ISR
+void fdir_report_anomaly(AnomalyID_t id, uint32_t param1) {
+    AnomalyReport_t report;
+    report.id           = id;
+    report.severity     = ANOMALY_SEVERITY_TABLE[id];
+    report.param1       = param1;
+    report.param2       = 0;
+    report.timestamp_us = get_mission_time_us();
+
+    // Send to FDIR queue — non-blocking from ISR context
+    BaseType_t xWoken = pdFALSE;
+    if (xPortIsInsideInterrupt()) {
+        xQueueSendFromISR(fdir_queue, &report, &xWoken);
+        portYIELD_FROM_ISR(xWoken);
+    } else {
+        xQueueSend(fdir_queue, &report, 0);  // don't block — just drop if full
+    }
+}
+```
+
+---
+
+## The FDIR Task
+
+```c
+// FDIR task — high priority, processes anomaly reports
+void vFDIR_Task(void* pvParams) {
+    AnomalyReport_t report;
+
+    for (;;) {
+        // Block waiting for anomaly reports
+        if (xQueueReceive(fdir_queue, &report, portMAX_DELAY) == pdTRUE) {
+            fdir_process_anomaly(&report);
+        }
+    }
+}
+
+// Response table — maps anomaly IDs to recovery actions
+typedef void (*RecoveryAction_t)(const AnomalyReport_t* report);
+
+static const RecoveryAction_t RECOVERY_TABLE[ANOMALY_COUNT] = {
+    [ANOMALY_IMU_FAILURE]           = fdir_handle_imu_failure,
+    [ANOMALY_MAGNETOMETER_FAILURE]  = fdir_handle_mag_failure,
+    [ANOMALY_RW_SPEED_LIMIT]        = fdir_handle_rw_saturation,
+    [ANOMALY_ECC_UNCORRECTABLE]     = fdir_handle_ecc_failure,
+    [ANOMALY_POWER_UNDERVOLTAGE]    = fdir_handle_undervoltage,
+    [ANOMALY_COMMS_LINK_LOST]       = fdir_handle_link_lost,
+    // ...
+};
+
+static void fdir_process_anomaly(const AnomalyReport_t* report) {
+    // Log the anomaly — always
+    event_log_write(report);
+
+    // Increment anomaly counter
+    anomaly_counts[report->id]++;
+
+    // Check for repeated failure (component degraded)
+    if (anomaly_counts[report->id] > ANOMALY_THRESHOLD[report->id]) {
+        // Escalate to safe mode
+        fdir_trigger_safe_mode(SAFE_MODE_REASON_REPEATED_FAULT, report->id);
+        return;
+    }
+
+    // Execute recovery action
+    if (RECOVERY_TABLE[report->id] != NULL) {
+        RECOVERY_TABLE[report->id](report);
+    }
+
+    // Critical severity → immediate safe mode
+    if (report->severity == SEVERITY_CRITICAL) {
+        fdir_trigger_safe_mode(SAFE_MODE_REASON_CRITICAL_FAULT, report->id);
+    }
+}
+```
+
+---
+
+## Safe Mode
+
+Safe mode is the spacecraft's "lifeboat" configuration — the minimum set of subsystems needed to survive and communicate with the ground.
+
+```c
+// Safe mode entry — called from FDIR or autonomy rules
+void fdir_trigger_safe_mode(SafeModeReason_t reason, uint32_t detail) {
+    // Log the trigger
+    log_event(EVENT_SAFE_MODE_ENTRY, (uint32_t)reason, detail);
+    persist_safe_mode_cause(reason, detail);  // survive reset
+
+    // 1. Command spacecraft to detumble / sun-pointing attitude
+    //    (reduces power consumption, ensures solar charging)
+    adcs_set_mode(ADCS_MODE_BDOT_DETUMBLE);
+
+    // 2. Disable non-essential loads
+    eps_set_load_shedding(LOAD_SHED_SAFE_MODE);
+    //    → off: science instruments, non-critical sensors, heaters
+    //    → on: OBC, comms, GPS, IMU, reaction wheels
+
+    // 3. Reduce transmission rate — conserve power
+    comms_set_data_rate(COMMS_RATE_BEACON_ONLY);
+
+    // 4. Set mode register
+    set_spacecraft_mode(MODE_SAFE);
+
+    // 5. Suspend non-critical tasks
+    vTaskSuspend(science_task_handle);
+    vTaskSuspend(data_storage_task_handle);
+
+    // DO NOT suspend: ADCS, FDIR, watchdog kick, comms RX
+}
+```
+
+---
+
+## Watchdog Integration
+
+The most important fault response mechanism is the hardware watchdog — a timer that resets the processor if not kicked within a set interval. If software hangs (deadlock, infinite loop, hard fault), the watchdog fires and recovers the system.
+
+```c
+// Watchdog kick task — highest priority, runs every 500 ms
+// If ANY task deadlocks and holds a resource that blocks this task,
+// the watchdog fires, resetting the system
+void vWatchdogKickTask(void* pvParams) {
+    for (;;) {
+        // Only kick if all critical tasks are healthy
+        if (is_adcs_task_healthy() && is_fdir_task_healthy()) {
+            hardware_watchdog_kick();
+        }
+        // If we can't kick, watchdog fires and resets system → safe
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+```
+
+See [Watchdog Patterns](../rtos/watchdog-patterns) for multi-level watchdog architectures.
+
+---
+
+## FDIR Design Principles
+
+**1. Conservative by default.** When in doubt, go to safe mode. A ground operator can recover a spacecraft in safe mode. They may not be able to recover a spacecraft that suffered damage because FDIR kept running a failing system.
+
+**2. No infinite loops in recovery.** Every recovery action must have a maximum retry count and an escalation path.
+
+**3. Preserve diagnostic information.** Before resetting or transitioning to safe mode, write the cause to non-volatile memory. This is often the only way to diagnose the problem later.
+
+**4. Ground must be able to override.** FDIR should be configurable — autonomous responses should be enable/disable-able by ground command, with adjustable thresholds.
+
+**5. Test your fault responses.** Fault injection testing — deliberately triggering anomaly conditions in test — is the only way to verify FDIR works correctly.

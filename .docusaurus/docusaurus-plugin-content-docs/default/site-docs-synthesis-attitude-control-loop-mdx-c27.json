@@ -1,0 +1,29 @@
+{
+  "id": "synthesis/attitude-control-loop",
+  "title": "Attitude Control Loop",
+  "description": "The attitude determination and control system (ADCS) is the most timing-critical and algorithmically complex subsystem in most spacecraft. It runs continuously, at a fixed rate, and any fault in its execution can cause the spacecraft to tumble.",
+  "source": "@site/docs/synthesis/attitude-control-loop.mdx",
+  "sourceDirName": "synthesis",
+  "slug": "/synthesis/attitude-control-loop",
+  "permalink": "/docs/synthesis/attitude-control-loop",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 2,
+  "frontMatter": {
+    "id": "attitude-control-loop",
+    "title": "Attitude Control Loop",
+    "sidebar_label": "Attitude Control Loop",
+    "sidebar_position": 2
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Overview",
+    "permalink": "/docs/synthesis/overview"
+  },
+  "next": {
+    "title": "Safe Mode FSM",
+    "permalink": "/docs/synthesis/safe-mode-fsm"
+  }
+}

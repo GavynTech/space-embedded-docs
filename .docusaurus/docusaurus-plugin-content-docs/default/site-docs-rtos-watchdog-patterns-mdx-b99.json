@@ -1,0 +1,29 @@
+{
+  "id": "rtos/watchdog-patterns",
+  "title": "Watchdog Patterns",
+  "description": "Full content coming soon. This page is part of the RTOS section.",
+  "source": "@site/docs/rtos/watchdog-patterns.mdx",
+  "sourceDirName": "rtos",
+  "slug": "/rtos/watchdog-patterns",
+  "permalink": "/docs/rtos/watchdog-patterns",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 9,
+  "frontMatter": {
+    "id": "watchdog-patterns",
+    "title": "Watchdog Patterns",
+    "sidebar_label": "Watchdog Patterns",
+    "sidebar_position": 9
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Timing Analysis",
+    "permalink": "/docs/rtos/timing-analysis"
+  },
+  "next": {
+    "title": "POSIX PSP",
+    "permalink": "/docs/rtos/posix-psp"
+  }
+}

@@ -1,0 +1,133 @@
+---
+id: external-resources
+title: External Resources
+sidebar_label: External Resources
+sidebar_position: 5
+---
+
+# External Resources
+
+The authoritative references behind this documentation.
+
+---
+
+## NASA Open Source
+
+**Core Flight System (cFS)**
+[github.com/nasa/cFS](https://github.com/nasa/cFS)
+The framework used on dozens of NASA missions. Read the architecture document and the cFE user's guide before writing any flight software.
+
+**OSAL (OS Abstraction Layer)**
+[github.com/nasa/osal](https://github.com/nasa/osal)
+Standalone RTOS abstraction library. Run the same code on FreeRTOS, RTEMS, and Linux.
+
+**F' (F Prime)**
+[github.com/nasa/fprime](https://github.com/nasa/fprime)
+JPL's component-based flight software framework. Used on Mars Ingenuity helicopter. C++, component-based, ground-testable.
+
+**NASA Software Engineering Handbook (NPR 7150.2)**
+[NASA Technical Standards](https://standards.nasa.gov)
+The standard that governs NASA software development. Defines software classification (Class A–D), required artifacts, and process requirements.
+
+**ITAR Note:** Some NASA documents are export-controlled. Check before distributing.
+
+---
+
+## Standards (Free Access)
+
+**CCSDS Standards**
+[public.ccsds.org/Publications/BlueBooks.aspx](https://public.ccsds.org/Publications/BlueBooks.aspx)
+All CCSDS standards are freely available. Essential reading:
+- CCSDS 133.0-B-2: Space Packet Protocol (the packet format used in cFS)
+- CCSDS 232.0-B-4: TC Space Data Link Protocol (command uplink)
+- CCSDS 131.0-B-3: TM Synchronization and Channel Coding
+
+**MISRA C:2012** — Available for purchase from MISRA consortium (~£30 GBP).
+
+**DO-178C** — RTCA/DO-178C, available from RTCA (~$300). Expensive but necessary if pursuing certification work.
+
+---
+
+## Books
+
+**"Real-Time Systems Design and Analysis"** — Phillip Laplante
+Scheduling theory, WCET analysis, RTOS concepts. Dense but authoritative.
+
+**"Spacecraft Dynamics and Control"** — Marcel Sidi
+ADCS system design, control laws, sensors, actuators. One of the better textbooks for implementers.
+
+**"Fundamentals of Spacecraft Attitude Determination and Control"** — Markley & Crassidis
+The attitude determination reference. Quaternions, EKF, TRIAD, QUEST. Essential for anyone implementing ADCS algorithms.
+
+**"Satellite Communications Systems Engineering"** — Pratt & Bostian
+Link budgets, propagation, modulation. Good for understanding what the communications team is calculating.
+
+**"Embedded Systems Design"** — Steve Heath
+Practical embedded hardware/software co-design. Good grounding for the hardware-software interface.
+
+**"Software Engineering for Embedded and Real-Time Systems"** — Roland Bbuttonell
+Practical. Covers MISRA-C, WCET, testing strategies for embedded.
+
+---
+
+## RTOS Documentation
+
+**FreeRTOS**
+[freertos.org/Documentation](https://freertos.org/Documentation/RTOS_book.html)
+Free PDF. Comprehensive. Read the mastering FreeRTOS book — it covers internals, not just API.
+
+**RTEMS**
+[docs.rtems.org](https://docs.rtems.org)
+Complete documentation including POSIX API, BSP development guide, and application notes.
+
+**Zephyr**
+[docs.zephyrproject.org](https://docs.zephyrproject.org)
+Thorough documentation for the kernel, device drivers, and subsystems.
+
+---
+
+## Orbital Mechanics
+
+**David Vallado — "Fundamentals of Astrodynamics and Applications"**
+The standard reference for orbit propagation, coordinate transforms, and time systems. SGP4 reference implementation by Vallado is the authoritative implementation.
+
+**Celestrak** — [celestrak.org](https://celestrak.org)
+TLE data, SGP4 reference code, atmospheric density models.
+
+**GMAT (General Mission Analysis Tool)**
+[software.nasa.gov/software/GSC-17177-1](https://software.nasa.gov/software/GSC-17177-1)
+NASA's free mission analysis tool. Use to validate orbit propagator implementations.
+
+---
+
+## Radiation & Reliability
+
+**ESA ESCC/ECSS Standards**
+[escies.org](https://escies.org)
+European component and process standards. ECSS-Q-ST-60-15C covers radiation hardness assurance.
+
+**NASA GSFC Radiation Effects & Analysis Group**
+[radhome.gsfc.nasa.gov](https://radhome.gsfc.nasa.gov)
+Test data for radiation effects on components.
+
+**JPL Radiation Handbook**
+[radcentral.jpl.nasa.gov](https://radcentral.jpl.nasa.gov)
+Comprehensive reference for radiation effects in space systems.
+
+---
+
+## Communities
+
+**Space Stack Exchange**
+[space.stackexchange.com](https://space.stackexchange.com)
+Good for specific technical questions on orbital mechanics, mission design.
+
+**r/aerospace** and **r/spaceflight**
+Less technical but useful for staying current on industry news.
+
+**AIAA (American Institute of Aeronautics and Astronautics)**
+[aiaa.org](https://aiaa.org)
+Technical papers on FSW, GNC, systems engineering. Student membership is affordable.
+
+**SmallSat Conference (Logan, Utah)**
+Annual conference focused on CubeSats and small satellites. Good for understanding commercial small sat FSW trends.

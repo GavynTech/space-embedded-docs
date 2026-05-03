@@ -1,0 +1,86 @@
+---
+sidebar_position: 1
+---
+
+# Space Embedded Systems
+
+This reference covers the disciplines required to build, understand, and contribute to **flight software and space systems** — from the C code running on a radiation-hardened microcontroller to the orbital mechanics equations that determine whether your spacecraft is pointing the right direction.
+
+It is not a tutorial. It is a dense, practitioner-focused reference — written for engineers who need to understand *why* the code looks the way it does, not just how to copy it.
+
+---
+
+## The Core Insight
+
+Space software engineering is not harder than other software engineering. It is *different* — and the differences come from physics, not from convention.
+
+**The machine you're targeting:**
+- Has 256 KB of RAM and runs at 25 MHz
+- Operates at −40°C to +85°C with no air for cooling
+- Gets hit by ~50 high-energy particle strikes per day
+- Cannot be rebooted by a human if it locks up
+- Has a 12-minute communication window every 94 minutes
+- Must execute deterministically — a missed deadline is a mission failure
+
+Every pattern in this reference exists because of those constraints. `malloc` is banned not because it's slow, but because it's non-deterministic — if heap fragmentation causes an allocation failure at the wrong moment, the spacecraft may not recover. Exceptions are disabled not as style preference, but because unhandled exceptions on a spacecraft are unrecoverable. Triple modular redundancy isn't paranoia — it's the minimum viable fault tolerance for hardware that experiences radiation-induced bit flips.
+
+Once you internalize the constraints, the code starts to make sense.
+
+---
+
+## How to Use This
+
+The reference is divided into six disciplines that build on each other:
+
+| Section | What It Teaches |
+|---|---|
+| **Embedded C/C++** | The language patterns that work in constrained, safety-critical environments |
+| **RTOS** | How real-time schedulers work and how to use them correctly |
+| **Space Hardware** | The physical hardware stack your code runs on |
+| **Flight Software** | How real spacecraft software is architectured and operated |
+| **Orbital Physics** | The math your software implements — orbits, attitude, estimation |
+| **Safety & Reliability** | How you prove the software is correct before it launches |
+
+The **Synthesis** section is where all six come together: each page takes a real spacecraft software component and shows exactly how the disciplines interact in a production implementation.
+
+You can read sections independently based on your gaps. If you understand embedded C but have never touched an RTOS, start with RTOS. If you're strong on the software side but don't know what SGP4 is, start with Orbital Physics.
+
+---
+
+## Who This Is For
+
+- Software engineers preparing for flight software roles at companies like Firefly, Relativity Space, Spire, Planet Labs, Rocket Lab, or similar
+- Embedded engineers transitioning from automotive or industrial systems to space
+- Systems engineers who want to understand the software they're specifying
+- Hobbyists building CubeSat or amateur satellite projects who want to understand how the professionals do it
+
+**Strong C/C++ fundamentals assumed.** No aerospace background required. No prior embedded experience required, though it helps.
+
+---
+
+## The Mindset Shift
+
+Most software engineers are trained to think about correctness and performance. Space software engineers think about **correctness, determinism, and fault recovery** — in that order.
+
+```
+Desktop software:  "Does it produce the right output?"
+Space software:    "Does it always produce the right output,
+                    within a bounded time, even after a
+                    radiation-induced bit flip, even if the
+                    ground station is out of range for 6 hours?"
+```
+
+The second question is structurally harder. It requires different language patterns, different architecture, and different verification methods. This reference teaches all three.
+
+---
+
+## A Note on Standards
+
+You will encounter several standards throughout this reference:
+
+- **MISRA-C:2012** — C coding standard for safety-critical embedded systems
+- **DO-178C** — Software certification standard for avionics (also used in space)
+- **ECSS-E-ST-40** — ESA's space software engineering standard
+- **CCSDS** — Consultative Committee for Space Data Systems — packet and protocol standards used by NASA, ESA, and most space agencies
+
+These are not bureaucratic obstacles. They encode decades of failure analysis — every rule exists because something went wrong without it. Understanding them makes you a better engineer whether or not you're seeking certification.

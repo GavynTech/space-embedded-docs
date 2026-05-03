@@ -1,0 +1,355 @@
+---
+id: attitude-control-loop
+title: Attitude Control Loop
+sidebar_label: Attitude Control Loop
+sidebar_position: 2
+---
+
+# Attitude Control Loop
+
+The attitude determination and control system (ADCS) is the most timing-critical and algorithmically complex subsystem in most spacecraft. It runs continuously, at a fixed rate, and any fault in its execution can cause the spacecraft to tumble.
+
+This page implements the full loop: sensor reading → attitude estimation (EKF) → control law → actuator commanding. Every component connects to a discipline covered in this reference.
+
+---
+
+## The Loop Structure
+
+```
+Sensor Data          Estimation          Control           Actuators
+──────────           ──────────          ───────           ─────────
+IMU (gyro)     →                                       → Reaction Wheels
+Magnetometer   →    Extended        →    PD             → Magnetorquers
+Sun Sensor     →    Kalman Filter   →    Controller     → Thrusters
+Star Tracker   →                                           (if available)
+```
+
+Rate: **10 Hz** — one complete cycle every 100 ms. This is the hard deadline.
+
+---
+
+## Data Structures
+
+```c
+// Quaternion: [q1 q2 q3 | q4] = [vector | scalar]
+// Convention: body frame to ECI frame
+typedef struct {
+    double q1, q2, q3;   // vector part
+    double q4;           // scalar part (cos(theta/2))
+} Quaternion_t;
+
+// Angular rate in body frame (rad/s)
+typedef struct {
+    double x, y, z;
+} AngularRate_t;
+
+// Sensor package — filled by sensor drivers each cycle
+typedef struct {
+    AngularRate_t  gyro;          // body angular rate (rad/s)
+    double         mag_body[3];   // magnetic field in body frame (nT)
+    double         sun_body[3];   // sun direction in body frame (unit vector)
+    bool           mag_valid;
+    bool           sun_valid;
+    uint64_t       timestamp_us;  // microseconds since mission epoch
+} SensorMeasurement_t;
+
+// EKF state
+typedef struct {
+    Quaternion_t   q_est;          // estimated attitude (body→ECI)
+    double         gyro_bias[3];   // estimated gyro bias (rad/s)
+    double         P[6][6];        // error covariance matrix
+} EKF_State_t;
+
+// Control torque command
+typedef struct {
+    double torque_Nm[3];           // commanded torque in body frame
+} TorqueCommand_t;
+
+// Reaction wheel speeds
+typedef struct {
+    double speed_rads[4];          // 4-wheel pyramid configuration
+} WheelSpeeds_t;
+```
+
+---
+
+## Sensor Reading
+
+```c
+// Called at start of each 100 ms cycle
+// Each driver is interrupt-driven — data is ready in a buffer
+bool adcs_read_sensors(SensorMeasurement_t* meas) {
+    meas->timestamp_us = get_mission_time_us();
+
+    // IMU (gyroscope + accelerometer) via SPI
+    // IMU runs at 100 Hz; data is in double buffer, this reads latest
+    if (!imu_read_gyro(&meas->gyro)) {
+        log_event(EVENT_IMU_READ_FAIL, 0, 0);
+        return false;   // IMU failure — cannot run ADCS without gyro
+    }
+
+    // Magnetometer via I2C
+    double mag_raw[3];
+    meas->mag_valid = magnetometer_read(mag_raw);
+    if (meas->mag_valid) {
+        // Apply calibration matrix (pre-loaded from TBL table)
+        calibrate_magnetometer(mag_raw, meas->mag_body);
+    }
+
+    // Sun sensor via analog ADC
+    meas->sun_valid = sun_sensor_read(meas->sun_body);
+
+    return true;
+}
+```
+
+---
+
+## Attitude Estimator (Extended Kalman Filter)
+
+The EKF fuses gyroscope data (high rate, drifts) with absolute reference measurements from magnetometer and sun sensor (lower rate, no drift).
+
+State vector: $\mathbf{x} = [\delta\boldsymbol{\theta}, \boldsymbol{b}]^T$ — attitude error (3) + gyro bias (3).
+
+```c
+// EKF state is persistent across cycles
+static EKF_State_t ekf;
+
+void ekf_init(const Quaternion_t* q_initial) {
+    ekf.q_est = *q_initial;
+    ekf.gyro_bias[0] = ekf.gyro_bias[1] = ekf.gyro_bias[2] = 0.0;
+
+    // Initial covariance — how uncertain are we?
+    memset(ekf.P, 0, sizeof(ekf.P));
+    // Attitude uncertainty: 1 degree = 0.0175 rad
+    ekf.P[0][0] = ekf.P[1][1] = ekf.P[2][2] = 0.0175 * 0.0175;
+    // Gyro bias uncertainty: 0.01 deg/s = 1.7e-4 rad/s
+    ekf.P[3][3] = ekf.P[4][4] = ekf.P[5][5] = 1.7e-4 * 1.7e-4;
+}
+
+// Propagation step — run every cycle (10 Hz)
+static void ekf_propagate(const AngularRate_t* gyro, double dt) {
+    // Correct gyro measurement for estimated bias
+    double omega[3];
+    omega[0] = gyro->x - ekf.gyro_bias[0];
+    omega[1] = gyro->y - ekf.gyro_bias[1];
+    omega[2] = gyro->z - ekf.gyro_bias[2];
+
+    // Propagate quaternion
+    quat_propagate(&ekf.q_est, omega, dt);
+
+    // Propagate covariance: P = F*P*F' + Q
+    // (simplified — full implementation uses matrix math library)
+    double sigma_gyro  = 1e-5;   // gyro noise (rad/s/sqrt(Hz))
+    double sigma_bias  = 1e-7;   // bias drift noise
+
+    for (int i = 0; i < 3; i++) {
+        ekf.P[i][i]   += sigma_gyro * sigma_gyro * dt;
+        ekf.P[i+3][i+3] += sigma_bias * sigma_bias * dt;
+    }
+}
+
+// Update step — run when valid reference measurement available
+static void ekf_update_magnetometer(const double* mag_body,
+                                    const double* mag_ref_eci) {
+    // Predict where magnetometer should point given current attitude estimate
+    double mag_predicted[3];
+    // Rotate reference field (ECI) to body frame using estimated attitude
+    Quaternion_t q_inv = quat_conjugate(&ekf.q_est);
+    quat_rotate_vector(&q_inv, mag_ref_eci, mag_predicted);
+
+    // Innovation: difference between measured and predicted
+    double innov[3];
+    innov[0] = mag_body[0] - mag_predicted[0];
+    innov[1] = mag_body[1] - mag_predicted[1];
+    innov[2] = mag_body[2] - mag_predicted[2];
+
+    // Innovation covariance and Kalman gain computation
+    // (full implementation here for production code)
+    double sigma_mag = 100.0;  // magnetometer noise (nT)
+    double K[3];               // simplified scalar gain per axis
+    for (int i = 0; i < 3; i++) {
+        double S = ekf.P[i][i] + sigma_mag * sigma_mag;
+        K[i] = ekf.P[i][i] / S;
+        // Update attitude error estimate
+        double delta_theta = K[i] * innov[i];
+        // Apply correction to quaternion (small angle approximation)
+        // [full rotation vector correction in production]
+        ekf.P[i][i] *= (1.0 - K[i]);  // update covariance
+    }
+
+    quat_normalize(&ekf.q_est);
+}
+```
+
+---
+
+## PD Attitude Controller
+
+Given estimated attitude and a target attitude, compute the torque to apply.
+
+$$\boldsymbol{\tau} = -k_p \cdot \delta\boldsymbol{\theta} - k_d \cdot \boldsymbol{\omega}$$
+
+Where $\delta\boldsymbol{\theta}$ is the attitude error (axis-angle) and $\boldsymbol{\omega}$ is the angular rate.
+
+```c
+typedef struct {
+    double kp;     // proportional gain (Nm/rad)
+    double kd;     // derivative gain (Nm·s/rad)
+    double max_torque_Nm;  // saturation limit
+} PDGains_t;
+
+// Gains loaded from TBL table — can be updated by ground command
+static PDGains_t gains;
+
+TorqueCommand_t adcs_compute_control(
+    const Quaternion_t* q_est,       // estimated attitude
+    const Quaternion_t* q_target,    // desired attitude
+    const AngularRate_t* omega,       // current angular rate
+    const PDGains_t*    g)
+{
+    TorqueCommand_t cmd = {0};
+
+    // Attitude error quaternion: q_err = q_target_conj * q_est
+    Quaternion_t q_t_conj = quat_conjugate(q_target);
+    Quaternion_t q_err    = quat_multiply(&q_t_conj, q_est);
+
+    // If scalar part is negative, flip to take short path
+    if (q_err.q4 < 0.0) {
+        q_err.q1 = -q_err.q1;
+        q_err.q2 = -q_err.q2;
+        q_err.q3 = -q_err.q3;
+        q_err.q4 = -q_err.q4;
+    }
+
+    // Error angle (approximately 2 * vector part for small angles)
+    double err[3] = {2.0 * q_err.q1, 2.0 * q_err.q2, 2.0 * q_err.q3};
+
+    // PD control law
+    cmd.torque_Nm[0] = -g->kp * err[0] - g->kd * omega->x;
+    cmd.torque_Nm[1] = -g->kp * err[1] - g->kd * omega->y;
+    cmd.torque_Nm[2] = -g->kp * err[2] - g->kd * omega->z;
+
+    // Saturate torque commands
+    for (int i = 0; i < 3; i++) {
+        if (cmd.torque_Nm[i] >  g->max_torque_Nm) cmd.torque_Nm[i] =  g->max_torque_Nm;
+        if (cmd.torque_Nm[i] < -g->max_torque_Nm) cmd.torque_Nm[i] = -g->max_torque_Nm;
+    }
+
+    return cmd;
+}
+```
+
+---
+
+## Reaction Wheel Torque Distribution
+
+A spacecraft typically has 4 reaction wheels in a pyramid configuration. The torque commands must be distributed across the 4 wheels:
+
+```c
+// Torque distribution matrix (pseudo-inverse of wheel geometry matrix)
+// For a pyramid configuration with 54.7° tilt angle
+static const double A_inv[4][3] = {
+    {  0.577, -0.577,  0.289 },
+    { -0.577, -0.577,  0.289 },
+    { -0.577,  0.577,  0.289 },
+    {  0.577,  0.577,  0.289 },
+};
+
+WheelSpeeds_t adcs_torque_to_wheel_speeds(
+    const TorqueCommand_t* cmd,
+    const WheelSpeeds_t* current_speeds,
+    double dt,
+    double wheel_inertia_kgm2)
+{
+    WheelSpeeds_t new_speeds;
+    double delta_h[4];  // change in angular momentum for each wheel
+
+    // delta_H = A_inv * torque * dt
+    for (int w = 0; w < 4; w++) {
+        delta_h[w] = 0.0;
+        for (int i = 0; i < 3; i++) {
+            delta_h[w] += A_inv[w][i] * cmd->torque_Nm[i] * dt;
+        }
+        // delta_omega = delta_H / I_wheel
+        new_speeds.speed_rads[w] = current_speeds->speed_rads[w]
+                                 + delta_h[w] / wheel_inertia_kgm2;
+
+        // Clamp to maximum wheel speed
+        const double MAX_SPEED = 628.3;  // 6000 RPM in rad/s
+        if (new_speeds.speed_rads[w] >  MAX_SPEED) new_speeds.speed_rads[w] =  MAX_SPEED;
+        if (new_speeds.speed_rads[w] < -MAX_SPEED) new_speeds.speed_rads[w] = -MAX_SPEED;
+    }
+
+    return new_speeds;
+}
+```
+
+---
+
+## The Full RTOS Task
+
+```c
+// ADCS task — runs at 10 Hz, highest priority in FSW
+void vADCS_ControlTask(void* pvParams) {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xPeriod = pdMS_TO_TICKS(100);  // 100 ms = 10 Hz
+
+    SensorMeasurement_t sensors;
+    WheelSpeeds_t current_wheel_speeds = {0};
+    Quaternion_t q_target = QUAT_IDENTITY;  // nadir-pointing target
+
+    // Initialize EKF with coarse initial attitude from sun sensor
+    Quaternion_t q_init = get_initial_attitude_estimate();
+    ekf_init(&q_init);
+
+    for (;;) {
+        // 1. Read sensors
+        bool sensor_ok = adcs_read_sensors(&sensors);
+
+        if (!sensor_ok) {
+            // Sensor failure — report to FDIR, continue with last known state
+            fdir_report_anomaly(ANOMALY_IMU_FAILURE, 0);
+        } else {
+            // 2. EKF propagation (always runs if we have gyro)
+            ekf_propagate(&sensors.gyro, 0.1);  // dt = 100 ms
+
+            // 3. EKF measurement update (when absolute reference available)
+            if (sensors.mag_valid) {
+                double mag_ref[3];
+                igrf_compute_model(get_mission_time_s(), mag_ref); // WMM/IGRF model
+                ekf_update_magnetometer(sensors.mag_body, mag_ref);
+            }
+
+            // 4. Get current attitude target from mode manager
+            q_target = mode_manager_get_attitude_target();
+
+            // 5. Compute control torque
+            TorqueCommand_t torque_cmd = adcs_compute_control(
+                &ekf.q_est, &q_target, &sensors.gyro, &gains);
+
+            // 6. Distribute to reaction wheels
+            WheelSpeeds_t cmd_speeds = adcs_torque_to_wheel_speeds(
+                &torque_cmd, &current_wheel_speeds, 0.1, WHEEL_INERTIA);
+
+            // 7. Command actuators
+            reaction_wheel_command(&cmd_speeds);
+            current_wheel_speeds = cmd_speeds;
+
+            // 8. Publish telemetry
+            adcs_publish_telemetry(&ekf.q_est, &sensors.gyro, &torque_cmd);
+        }
+
+        // Block until next 100 ms cycle — maintains exact periodicity
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+    }
+}
+```
+
+This is the complete ADCS loop. Every function call in this task connects to a topic in this reference:
+- Sensor reading → [Sensors & Actuators](../space-hardware/sensors-actuators)
+- EKF → [Kalman Filter](../orbital-physics/kalman-filter)
+- Quaternion operations → [Attitude Representation](../orbital-physics/attitude-representation)
+- RTOS task timing → [FreeRTOS](../rtos/freertos), [Scheduling](../rtos/scheduling)
+- FDIR reporting → [Fault Management](../flight-software/fault-management)
+- Telemetry → [Telemetry Pipeline](./telemetry-pipeline)

@@ -1,0 +1,29 @@
+{
+  "id": "orbital-physics/time-systems",
+  "title": "Time Systems",
+  "description": "Full content coming soon. This page is part of the Orbital Physics section.",
+  "source": "@site/docs/orbital-physics/time-systems.mdx",
+  "sourceDirName": "orbital-physics",
+  "slug": "/orbital-physics/time-systems",
+  "permalink": "/docs/orbital-physics/time-systems",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 8,
+  "frontMatter": {
+    "id": "time-systems",
+    "title": "Time Systems",
+    "sidebar_label": "Time Systems",
+    "sidebar_position": 8
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Kalman Filter",
+    "permalink": "/docs/orbital-physics/kalman-filter"
+  },
+  "next": {
+    "title": "Relativistic Effects",
+    "permalink": "/docs/orbital-physics/relativistic-effects"
+  }
+}

@@ -1,0 +1,119 @@
+---
+id: latency-numbers
+title: Latency & Timing Numbers
+sidebar_label: Latency Numbers
+sidebar_position: 1
+---
+
+# Latency & Timing Numbers
+
+The numbers every space systems engineer should have internalized. Not for memorization — for intuition about what your code is doing and what is physically possible.
+
+---
+
+## Processor & Memory (Spacecraft Processors)
+
+| Operation | RAD750 (200 MHz) | ARM Cortex-M7 (216 MHz) | LEON3-FT (100 MHz) |
+|---|---|---|---|
+| Integer add | ~5 ns | ~5 ns | ~10 ns |
+| Integer multiply | ~10 ns | ~5 ns | ~10–40 ns |
+| Floating-point add | ~30 ns | ~5 ns | ~40 ns |
+| FP multiply | ~30 ns | ~5 ns | ~40 ns |
+| L1 cache hit | ~10 ns | ~5 ns | ~10 ns |
+| SRAM access | ~50 ns | ~10–20 ns | ~50 ns |
+| Flash read | ~100–500 ns | ~50–200 ns | ~100–500 ns |
+| EEPROM write | ~5–10 ms | ~5–10 ms | ~5–10 ms |
+| Context switch (RTOS) | ~2–5 µs | ~1–2 µs | ~3–6 µs |
+
+---
+
+## Spacecraft Bus Interfaces
+
+| Bus | Data Rate | Single Transaction Latency | Notes |
+|---|---|---|---|
+| **SPI** | 1–50 Mbps | 1–10 µs | Common for sensors (IMU, ADC) |
+| **I2C** | 100 kbps – 1 Mbps | 50–500 µs | Shared bus, multi-device |
+| **CAN** | 1 Mbps | 100–500 µs | Robust, used in spacecraft harness |
+| **UART** | 9.6 kbps – 1 Mbps | 1–100 ms (depends on message size) | Simple, point-to-point |
+| **MIL-STD-1553** | 1 Mbps | ~150 µs per word | Legacy avionics/mil, highly reliable |
+| **SpaceWire** | 10 Mbps – 400 Mbps | 1–50 µs | High-speed, packet-switched |
+| **RS-422/485** | 1–10 Mbps | 1–100 µs | Differential, noise-immune |
+
+---
+
+## Communications Links
+
+| Link Type | One-Way Latency | Data Rate | Notes |
+|---|---|---|---|
+| LEO ground link (500 km) | ~1.7 ms | 1 kbps – 100 Mbps | Depends on band and hardware |
+| GEO ground link (36,000 km) | ~120 ms | 1 Mbps – 1 Gbps | 240 ms round trip |
+| Moon-Earth | ~1.3 s | | 384,400 km average |
+| Mars-Earth (min) | ~3.1 min | | 56 million km |
+| Mars-Earth (max) | ~21 min | | 401 million km |
+| Voyager 1 (2024) | ~22.5 hours | 160 bps | ~24 billion km |
+
+---
+
+## Orbital Mechanics Timescales
+
+| Parameter | LEO (500 km) | GEO (35,786 km) | Moon orbit |
+|---|---|---|---|
+| Orbital period | 94.6 min | 23h 56min | 27.3 days |
+| Orbital velocity | 7.6 km/s | 3.07 km/s | 1.02 km/s |
+| Eclipse duration (typical) | ~35 min | 0–70 min/yr | ~1 hour |
+| Ground contact per pass | 5–15 min | Continuous (if in view) | N/A |
+| Contacts per day (single GS) | 4–6 passes | Continuous | Varies |
+
+---
+
+## Radiation Rates (LEO, 500–600 km)
+
+| Parameter | Value | Notes |
+|---|---|---|
+| SEU rate (unprotected SRAM, 1 MB) | 10–100 upsets/day | Varies with inclination, solar activity |
+| SEU rate (SAA crossing, 1 MB) | 10× nominal | South Atlantic Anomaly |
+| TID accumulation (28° inclination) | 0.5–2 krad/year | Behind 4 mm Al shielding |
+| TID accumulation (98° polar) | 3–15 krad/year | |
+| Latchup rate (COTS CMOS) | 1–10 events/day | Very device-dependent |
+
+---
+
+## ADCS Typical Rates
+
+| Component | Sample Rate | Note |
+|---|---|---|
+| Gyroscope | 100–1000 Hz | IMU data rate |
+| Magnetometer | 1–100 Hz | Slower for noise averaging |
+| Sun sensor | 1–10 Hz | |
+| Star tracker | 0.5–10 Hz | High processing overhead |
+| GPS position | 1–10 Hz | When in view |
+| ADCS control loop | 1–100 Hz | Typical: 10 Hz |
+| Reaction wheel speed | 50–1000 Hz | Motor controller loop rate |
+
+---
+
+## Timing System Precision
+
+| Clock Source | Stability | Absolute Accuracy | Notes |
+|---|---|---|---|
+| Crystal oscillator (TCXO) | 10⁻⁶ (1 ppm) | ±1 ppm after calibration | Common OBC oscillator |
+| OCXO | 10⁻⁸ | ±10 ppb | Used in timing-critical systems |
+| GPS disciplined | 10⁻⁹ | ±100 ns | While GPS lock maintained |
+| Relativistic correction (LEO) | — | +0.265 ns/s net drift | SR + GR combined |
+
+---
+
+## Software Timing Budget (10 Hz ADCS Loop, 100 ms period)
+
+| Step | Time Budget | Notes |
+|---|---|---|
+| IMU read (SPI) | ~10 µs | 3-byte register read at 10 MHz SPI |
+| Magnetometer read (I2C) | ~500 µs | 6-byte at 400 kHz I2C |
+| EKF propagation | ~500 µs | Matrix operations on Cortex-M7 |
+| EKF measurement update | ~1 ms | If reference available |
+| PD control law | ~50 µs | Simple multiplication |
+| Reaction wheel command (SPI) | ~10 µs | |
+| Telemetry packing | ~100 µs | |
+| **Total** | **~2.2 ms** | **22 ms remaining as margin** |
+
+78% CPU headroom at 10 Hz on a typical embedded processor. This headroom absorbs measurement update computation, additional sensors, and fault checking without threatening the deadline.

@@ -1,0 +1,29 @@
+{
+  "id": "space-hardware/sensors-actuators",
+  "title": "Sensors & Actuators",
+  "description": "Full content coming soon. This page is part of the Space Hardware section.",
+  "source": "@site/docs/space-hardware/sensors-actuators.mdx",
+  "sourceDirName": "space-hardware",
+  "slug": "/space-hardware/sensors-actuators",
+  "permalink": "/docs/space-hardware/sensors-actuators",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 10,
+  "frontMatter": {
+    "id": "sensors-actuators",
+    "title": "Sensors & Actuators",
+    "sidebar_label": "Sensors & Actuators",
+    "sidebar_position": 10
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "CubeSat Hardware",
+    "permalink": "/docs/space-hardware/cubesat-hardware"
+  },
+  "next": {
+    "title": "Overview",
+    "permalink": "/docs/flight-software/overview"
+  }
+}

@@ -1,0 +1,247 @@
+---
+id: freertos
+title: FreeRTOS
+sidebar_label: FreeRTOS
+sidebar_position: 2
+---
+
+# FreeRTOS
+
+FreeRTOS is the most widely used RTOS in the embedded world. For spacecraft, it is the dominant choice for CubeSats, small satellite OBCs, and subsystem controllers that don't require the full heritage of VxWorks or RTEMS.
+
+It is small (~12 KB ROM), well-documented, and open source (MIT license since 2018). Amazon maintains it as AWS FreeRTOS, but the core kernel is independent.
+
+---
+
+## Core Abstractions
+
+FreeRTOS gives you five building blocks:
+
+| Abstraction | Purpose |
+|---|---|
+| **Task** | Independent thread of execution with its own stack |
+| **Queue** | FIFO message passing between tasks and ISRs |
+| **Semaphore** | Signaling and mutual exclusion |
+| **Mutex** | Mutual exclusion with priority inheritance |
+| **Timer** | Software timers for periodic or one-shot callbacks |
+
+---
+
+## Tasks
+
+A FreeRTOS task is a C function that never returns (it runs in an infinite loop or explicitly deletes itself).
+
+```c
+// Task function signature
+void vMyTask(void* pvParameters) {
+    // Initialization
+    const TickType_t xDelay = pdMS_TO_TICKS(10);  // 10 ms period
+
+    for (;;) {
+        // Do work
+        read_sensors();
+        run_attitude_estimator();
+
+        // Block until next activation — this is NOT a busy-wait
+        vTaskDelayUntil(&xLastWakeTime, xDelay);
+    }
+    // Never reached — but if task exits, it must delete itself
+    vTaskDelete(NULL);
+}
+
+// Create the task
+TaskHandle_t xTaskHandle = NULL;
+
+xTaskCreate(
+    vMyTask,          // task function
+    "ADCS",           // name (for debugging)
+    512,              // stack size in words (not bytes)
+    NULL,             // parameter passed to task
+    3,                // priority (higher = more urgent)
+    &xTaskHandle      // handle for later reference
+);
+```
+
+**Priority:** Higher number = higher priority in FreeRTOS. Task with highest priority among ready tasks runs first. On a spacecraft, assign priorities according to timing criticality:
+
+```c
+#define PRIORITY_ATTITUDE_CONTROL   5   // highest — 10 ms deadline
+#define PRIORITY_FAULT_MANAGER      4   // safety monitoring
+#define PRIORITY_COMMAND_HANDLER    3   // ground commands
+#define PRIORITY_TELEMETRY          2   // housekeeping downlink
+#define PRIORITY_BACKGROUND         1   // non-critical logging
+```
+
+---
+
+## Queues
+
+Queues are the primary mechanism for passing data between tasks and from ISRs to tasks. They are thread-safe by design — no external locking required.
+
+```c
+// Create a queue that holds 10 sensor_reading_t items
+QueueHandle_t xSensorQueue = xQueueCreate(10, sizeof(sensor_reading_t));
+
+// Producer: ISR or sensor task
+void vSensorTask(void* pvParams) {
+    sensor_reading_t reading;
+    for (;;) {
+        reading = read_imu();
+
+        // Send to queue — block up to 10 ms if full
+        xQueueSend(xSensorQueue, &reading, pdMS_TO_TICKS(10));
+
+        vTaskDelay(pdMS_TO_TICKS(10));  // 100 Hz sample rate
+    }
+}
+
+// Consumer: attitude estimator task
+void vEstimatorTask(void* pvParams) {
+    sensor_reading_t reading;
+    for (;;) {
+        // Block indefinitely waiting for data
+        if (xQueueReceive(xSensorQueue, &reading, portMAX_DELAY) == pdTRUE) {
+            run_ekf_update(&reading);
+        }
+    }
+}
+```
+
+**From an ISR:** Use `xQueueSendFromISR()` — the regular `xQueueSend()` must not be called from interrupt context.
+
+```c
+void UART_IRQHandler(void) {
+    uint8_t byte = UART_ReadByte();
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    xQueueSendFromISR(xRxQueue, &byte, &xHigherPriorityTaskWoken);
+
+    // If the send unblocked a higher-priority task, yield to it
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+```
+
+---
+
+## Semaphores
+
+**Binary semaphore** — signal from ISR to task:
+
+```c
+SemaphoreHandle_t xDataReadySem = xSemaphoreCreateBinary();
+
+// ISR: new data available
+void SENSOR_IRQHandler(void) {
+    BaseType_t xWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xDataReadySem, &xWoken);
+    portYIELD_FROM_ISR(xWoken);
+}
+
+// Task: wait for signal then process
+void vProcessTask(void* pvParams) {
+    for (;;) {
+        xSemaphoreTake(xDataReadySem, portMAX_DELAY);
+        process_sensor_data();
+    }
+}
+```
+
+**Counting semaphore** — tracking available resources or events.
+
+---
+
+## Mutexes and Priority Inheritance
+
+Use a mutex (not a binary semaphore) for mutual exclusion between tasks. FreeRTOS mutexes implement **priority inheritance** — when a high-priority task blocks waiting for a mutex held by a low-priority task, the low-priority task temporarily inherits the higher priority to prevent priority inversion.
+
+```c
+MutexHandle_t xI2CBus = xSemaphoreCreateMutex();
+
+void vTask_IMU(void* pvParams) {
+    for (;;) {
+        // Acquire I2C bus
+        if (xSemaphoreTake(xI2CBus, pdMS_TO_TICKS(5)) == pdTRUE) {
+            imu_read_i2c(&imu_data);
+            xSemaphoreGive(xI2CBus);
+        } else {
+            // Timeout — log anomaly
+            log_anomaly(ANOMALY_I2C_TIMEOUT);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+```
+
+---
+
+## vTaskDelayUntil — Periodic Task Activation
+
+`vTaskDelay()` delays for N ticks from the current time. `vTaskDelayUntil()` delays until an absolute tick count. For periodic tasks, always use `vTaskDelayUntil()` — it compensates for execution jitter and maintains accurate periodicity.
+
+```c
+void vPeriodicTask(void* pvParams) {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xPeriod = pdMS_TO_TICKS(10);  // 100 Hz
+
+    for (;;) {
+        // Do work
+        run_control_loop();
+
+        // Wait until 10 ms have elapsed since xLastWakeTime
+        // xLastWakeTime is updated automatically
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+    }
+}
+```
+
+If `run_control_loop()` takes 3 ms, the next activation is 7 ms later — always maintaining 10 ms between activations. With `vTaskDelay(10)`, the period would be 10 ms + execution time = 13 ms.
+
+---
+
+## FreeRTOS Configuration
+
+`FreeRTOSConfig.h` configures the kernel for your target. Key settings:
+
+```c
+// FreeRTOSConfig.h
+#define configUSE_PREEMPTION            1       // preemptive scheduler
+#define configCPU_CLOCK_HZ              168000000UL
+#define configTICK_RATE_HZ              1000    // 1 ms tick
+#define configMAX_PRIORITIES            8
+#define configMINIMAL_STACK_SIZE        128     // words
+#define configTOTAL_HEAP_SIZE           (32 * 1024)  // 32 KB for FreeRTOS heap
+
+// Use static allocation — no dynamic memory for tasks/queues
+#define configSUPPORT_STATIC_ALLOCATION  1
+#define configSUPPORT_DYNAMIC_ALLOCATION 0      // ban dynamic alloc in flight code
+
+// Stack overflow detection
+#define configCHECK_FOR_STACK_OVERFLOW   2      // fill pattern check
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName);
+
+// Runtime stats for debugging
+#define configGENERATE_RUN_TIME_STATS   1
+```
+
+**`configSUPPORT_DYNAMIC_ALLOCATION 0`** is critical for flight code — it prevents tasks and queues from being created with dynamic memory allocation, forcing you to use static variants (`xTaskCreateStatic`, `xQueueCreateStatic`) where buffers are allocated at compile time.
+
+---
+
+## Stack Overflow Detection
+
+FreeRTOS can detect stack overflows two ways:
+
+- **Method 1:** Check stack pointer on context switch — fast but misses overflows that recover
+- **Method 2:** Fill stack with pattern at creation, check watermark — catches all overflows
+
+```c
+// Called when a stack overflow is detected
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName) {
+    // Log which task overflowed
+    fault_log_write(FAULT_STACK_OVERFLOW, (uint32_t)xTask, 0);
+    // Reset — the system is in an unknown state
+    NVIC_SystemReset();
+}
+```
+
+In development, use `uxTaskGetStackHighWaterMark()` to check how close each task came to overflowing its stack, then size stacks with margin.

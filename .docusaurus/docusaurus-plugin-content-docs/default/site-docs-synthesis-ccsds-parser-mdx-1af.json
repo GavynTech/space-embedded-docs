@@ -1,0 +1,29 @@
+{
+  "id": "synthesis/ccsds-parser",
+  "title": "CCSDS Parser",
+  "description": "Full content coming soon. This page is part of the Synthesis section.",
+  "source": "@site/docs/synthesis/ccsds-parser.mdx",
+  "sourceDirName": "synthesis",
+  "slug": "/synthesis/ccsds-parser",
+  "permalink": "/docs/synthesis/ccsds-parser",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 4,
+  "frontMatter": {
+    "id": "ccsds-parser",
+    "title": "CCSDS Parser",
+    "sidebar_label": "CCSDS Parser",
+    "sidebar_position": 4
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Safe Mode FSM",
+    "permalink": "/docs/synthesis/safe-mode-fsm"
+  },
+  "next": {
+    "title": "ECC Memory Scrubber",
+    "permalink": "/docs/synthesis/ecc-memory-scrubber"
+  }
+}

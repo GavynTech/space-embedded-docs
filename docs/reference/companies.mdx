@@ -1,0 +1,131 @@
+---
+id: companies
+title: Space Companies
+sidebar_label: Companies
+sidebar_position: 4
+---
+
+# Space Companies
+
+The landscape of companies building spacecraft software infrastructure — what they build, what problems they solve, and what kind of engineering they hire for.
+
+---
+
+## Launch Vehicles
+
+Companies that build rockets. Their FSW problems: flight control, engine management, vehicle health monitoring, ground software.
+
+### Firefly Aerospace (Austin, TX)
+Alpha and Beta launch vehicles targeting small-to-medium payloads. Growing from a near-failure to successful orbital launches. FSW stack includes flight computer software, telemetry systems, and ground software.
+
+**Software focus:** Flight control software, avionics FSW, ground systems, mission operations.
+
+### Relativity Space (Long Beach, CA)
+3D-printed launch vehicles (Terran 1, Terran R). Novel manufacturing but conventional avionics challenges — plus the software to control metal 3D printers at aerospace scale.
+
+**Software focus:** Flight software, GNC (guidance, navigation, control), manufacturing software (Python/C++ for print process control).
+
+### Rocket Lab (Long Beach, CA / Auckland, NZ)
+Electron (small launch, proven) and Neutron (medium, in development). First-stage reuse via helicopter catch. Very active launch cadence.
+
+**Software focus:** Flight software (C/C++), GNC, avionics, ground systems, mission operations. Well-known for solid engineering culture.
+
+### SpaceX (Hawthorne, CA)
+Falcon 9, Falcon Heavy, Starship. Also Starlink constellation (4,000+ satellites). Most prolific launch provider in the world.
+
+**Software focus:** FSW, GNC, Starlink operations software, ground systems. Uses C++ heavily. Competitive, fast-paced.
+
+---
+
+## Satellites & Constellations
+
+### Spire Global (San Francisco, CA)
+Constellation of 100+ small satellites (3U/6U CubeSats) providing weather, maritime, and aviation data. One of the largest CubeSat operators.
+
+**Software focus:** Flight software for small sats, ground software, data pipeline. Good entry point for FSW with CubeSat-scale complexity.
+
+### Planet Labs (San Francisco, CA)
+World's largest constellation of Earth observation satellites (Doves, SuperDoves). Daily imaging of the entire Earth.
+
+**Software focus:** FSW, operations automation, data processing pipelines, image processing. Mix of embedded and backend engineering.
+
+### Axelspace (Tokyo, Japan)
+Small satellite manufacturer and Earth observation operator (GRUS constellation). Growing presence in commercial small sat market.
+
+**Software focus:** FSW development, satellite operations. Japanese aerospace market entry point.
+
+### Satellogic (Buenos Aires / New York)
+High-resolution, low-cost Earth observation constellation. Focused on making satellite imagery affordable.
+
+**Software focus:** FSW, mission operations, data products.
+
+### Maxar Technologies (Westminster, CO)
+Operator of WorldView imaging satellites. Also builds satellites (buses, instruments) for government and commercial customers.
+
+**Software focus:** FSW for large, complex imaging satellites. More traditional aerospace culture.
+
+---
+
+## Communications
+
+### OneWeb / Eutelsat (London / Paris)
+LEO broadband constellation (648 satellites). Starlink competitor.
+
+**Software focus:** Constellation management software, ground systems, link management.
+
+### Iridium (McLean, VA)
+66-satellite LEO constellation providing global voice and data. The original LEO constellation, relaunched in 2019.
+
+**Software focus:** Network operations, satellite control software.
+
+---
+
+## Ground / JSAT
+
+### SKY Perfect JSAT (Tokyo, Japan)
+Japan's dominant satellite operator. GEO communications satellites, growing into LEO operations. Also operating the "Space Compass" LEO infrastructure initiative.
+
+**Software focus:** Satellite operations, ground segment software, network management.
+
+---
+
+## Defense & Traditional Aerospace
+
+### Northrop Grumman
+James Webb Space Telescope (bus), MEV satellite servicing vehicles, defense systems.
+
+### Lockheed Martin (Space division, Denver, CO)
+Orion crew capsule, GPS III, A2100 bus. Large program culture.
+
+### Raytheon Intelligence & Space
+Classified and commercial satellite programs.
+
+### L3Harris Technologies
+Communications satellites, missile warning systems.
+
+---
+
+## Tools & Services
+
+### Ansys (formerly AGI) — Systems Tool Kit (STK)
+The standard tool for mission analysis, coverage analysis, and link budget calculations. Not hardware, but used universally.
+
+### Mathworks — Matlab/Simulink
+GNC algorithm development, auto-code generation (Embedded Coder). ADCS algorithms often prototyped here before C++ implementation.
+
+### Wind River — VxWorks
+The dominant commercial RTOS for avionics and space. VxWorks 653 is DO-178C certifiable.
+
+---
+
+## What They Actually Hire For
+
+| Role | What You Need |
+|---|---|
+| Flight Software Engineer | C/C++, RTOS (FreeRTOS/RTEMS/VxWorks), cFS, embedded debugging |
+| GNC Engineer | Orbital mechanics, Kalman filtering, MATLAB/Simulink, C++ implementation |
+| Ground Software Engineer | Python, C++, distributed systems, real-time data pipelines |
+| Systems Engineer | Systems architecture, requirements, interface definition, verification |
+| FPGA Engineer | VHDL/Verilog or HLS, radiation-hardened FPGAs, high-speed interfaces |
+
+The most direct path from this reference to employment is **Flight Software Engineer** — the role that directly implements what this reference teaches.

@@ -1,0 +1,119 @@
+.heroBanner {
+  padding: 5rem 0 4rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 3rem 1.5rem;
+  }
+}
+
+.heroTitle {
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+  color: #ffffff;
+}
+
+@media screen and (max-width: 996px) {
+  .heroTitle {
+    font-size: 2.2rem;
+  }
+}
+
+.heroSubtitle {
+  font-size: 1.1rem;
+  color: #94a3b8;
+  margin-bottom: 0.75rem;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  letter-spacing: 0.02em;
+}
+
+.heroBadge {
+  display: inline-block;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: #00d4ff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.75rem;
+  border-radius: 2px;
+  margin-bottom: 2rem;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.primaryButton {
+  background: #00d4ff !important;
+  color: #04080f !important;
+  font-weight: 700 !important;
+  border: none !important;
+  padding: 0.85rem 2rem !important;
+  font-size: 1rem !important;
+}
+
+.primaryButton:hover {
+  background: #26dcff !important;
+  color: #04080f !important;
+}
+
+.secondaryButton {
+  border: 1px solid rgba(0, 212, 255, 0.4) !important;
+  color: #00d4ff !important;
+  background: transparent !important;
+  padding: 0.85rem 2rem !important;
+}
+
+.secondaryButton:hover {
+  background: rgba(0, 212, 255, 0.08) !important;
+}
+
+.statsRow {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  margin-top: 3.5rem;
+  padding-top: 3rem;
+  border-top: 1px solid rgba(0, 212, 255, 0.1);
+}
+
+.stat {
+  text-align: center;
+}
+
+.statValue {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #00d4ff;
+  display: block;
+  line-height: 1;
+}
+
+.statLabel {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 0.35rem;
+}
+
+@media screen and (max-width: 600px) {
+  .statsRow {
+    gap: 1.5rem;
+  }
+  .statValue {
+    font-size: 1.4rem;
+  }
+}

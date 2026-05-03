@@ -1,0 +1,186 @@
+---
+id: attitude-representation
+title: Attitude Representation
+sidebar_label: Attitude Representation
+sidebar_position: 5
+---
+
+# Attitude Representation
+
+Attitude is the orientation of a spacecraft's body frame relative to a reference frame. Representing, tracking, and controlling attitude is the central problem of the ADCS system.
+
+There are three main ways to represent attitude in software. Two of them have critical failure modes that have caused real mission problems.
+
+---
+
+## Euler Angles — Intuitive but Dangerous
+
+Euler angles represent orientation as three successive rotations: roll, pitch, yaw. They are intuitive and easy to visualize.
+
+**The problem: gimbal lock.**
+
+At certain orientations, one rotational degree of freedom is lost. The most common form occurs when pitch reaches ±90° — roll and yaw become geometrically equivalent and the system loses the ability to represent orientation continuously.
+
+```c
+typedef struct {
+    double roll_rad;   // φ
+    double pitch_rad;  // θ
+    double yaw_rad;    // ψ
+} EulerAngles_t;
+
+// The rotation matrix from body to reference (ZYX convention)
+void euler_to_dcm(const EulerAngles_t* e, double R[3][3]) {
+    double cphi   = cos(e->roll_rad);  double sphi   = sin(e->roll_rad);
+    double ctheta = cos(e->pitch_rad); double stheta = sin(e->pitch_rad);
+    double cpsi   = cos(e->yaw_rad);   double spsi   = sin(e->yaw_rad);
+
+    R[0][0] = ctheta*cpsi;
+    R[0][1] = ctheta*spsi;
+    R[0][2] = -stheta;
+    R[1][0] = sphi*stheta*cpsi - cphi*spsi;
+    R[1][1] = sphi*stheta*spsi + cphi*cpsi;
+    R[1][2] = sphi*ctheta;
+    R[2][0] = cphi*stheta*cpsi + sphi*spsi;
+    R[2][1] = cphi*stheta*spsi - sphi*cpsi;
+    R[2][2] = cphi*ctheta;
+}
+```
+
+**When to use:** Display, human-readable attitude reports, when you know you will never be near singularity. Never use Euler angles as your internal attitude representation in a control system.
+
+---
+
+## Direction Cosine Matrix (DCM)
+
+A rotation matrix (3×3 orthogonal matrix, det = +1) directly encodes the rotation between two frames.
+
+$$R_{body}^{ref} = \begin{pmatrix} r_{11} & r_{12} & r_{13} \\ r_{21} & r_{22} & r_{23} \\ r_{31} & r_{32} & r_{33} \end{pmatrix}$$
+
+To rotate a vector from body frame to reference frame: $\vec{v}_{ref} = R \cdot \vec{v}_{body}$
+
+**Advantages:** No singularities. Direct geometric meaning. Easy to chain rotations: $R_{AB} = R_{AC} \cdot R_{CB}$
+
+**Disadvantages:** 9 elements for 3 degrees of freedom — over-parameterized. The orthogonality constraint ($R^T R = I$, $\det(R) = 1$) drifts under numerical integration — must be periodically renormalized.
+
+```c
+// Renormalize a DCM to maintain orthogonality
+// (orthogonalization via Gram-Schmidt)
+void dcm_renormalize(double R[3][3]) {
+    // Row 1: normalize
+    double n1 = sqrt(R[0][0]*R[0][0] + R[0][1]*R[0][1] + R[0][2]*R[0][2]);
+    R[0][0] /= n1; R[0][1] /= n1; R[0][2] /= n1;
+
+    // Row 2: subtract projection onto row 1, normalize
+    double dot = R[0][0]*R[1][0] + R[0][1]*R[1][1] + R[0][2]*R[1][2];
+    R[1][0] -= dot*R[0][0]; R[1][1] -= dot*R[0][1]; R[1][2] -= dot*R[0][2];
+    double n2 = sqrt(R[1][0]*R[1][0] + R[1][1]*R[1][1] + R[1][2]*R[1][2]);
+    R[1][0] /= n2; R[1][1] /= n2; R[1][2] /= n2;
+
+    // Row 3: cross product of rows 1 and 2 (guaranteed orthogonal)
+    R[2][0] = R[0][1]*R[1][2] - R[0][2]*R[1][1];
+    R[2][1] = R[0][2]*R[1][0] - R[0][0]*R[1][2];
+    R[2][2] = R[0][0]*R[1][1] - R[0][1]*R[1][0];
+}
+```
+
+---
+
+## Quaternions — The Flight Software Standard
+
+A unit quaternion encodes a rotation as a 4-element vector with a single constraint: $\|\mathbf{q}\| = 1$.
+
+$$\mathbf{q} = \begin{pmatrix} q_1 \\ q_2 \\ q_3 \\ q_4 \end{pmatrix} = \begin{pmatrix} \mathbf{e} \sin(\theta/2) \\ \cos(\theta/2) \end{pmatrix}$$
+
+Where $\mathbf{e}$ is the unit axis of rotation and $\theta$ is the rotation angle.
+
+**Advantages:**
+- 4 elements for 3 DOF — more compact than DCM
+- No singularities
+- Fast multiplication (fewer operations than DCM composition)
+- Easy to renormalize — just divide by magnitude
+- Numerically stable for integration
+
+**The double-cover problem:** $\mathbf{q}$ and $-\mathbf{q}$ represent the same physical rotation. This can cause unwinding — the attitude controller taking the "long way around" through a 360° rotation. Must be handled explicitly.
+
+```c
+typedef struct {
+    double q1, q2, q3;  // vector part: e * sin(theta/2)
+    double q4;          // scalar part: cos(theta/2)
+} Quaternion_t;
+
+// Quaternion multiplication: q_AB * q_BC = q_AC
+// (rotation A→B followed by B→C gives A→C)
+Quaternion_t quat_multiply(const Quaternion_t* p, const Quaternion_t* q) {
+    Quaternion_t r;
+    r.q1 = p->q4*q->q1 + p->q1*q->q4 + p->q2*q->q3 - p->q3*q->q2;
+    r.q2 = p->q4*q->q2 - p->q1*q->q3 + p->q2*q->q4 + p->q3*q->q1;
+    r.q3 = p->q4*q->q3 + p->q1*q->q2 - p->q2*q->q1 + p->q3*q->q4;
+    r.q4 = p->q4*q->q4 - p->q1*q->q1 - p->q2*q->q2 - p->q3*q->q3;
+    return r;
+}
+
+// Renormalize — do this periodically to prevent drift
+void quat_normalize(Quaternion_t* q) {
+    double norm = sqrt(q->q1*q->q1 + q->q2*q->q2 +
+                       q->q3*q->q3 + q->q4*q->q4);
+    q->q1 /= norm;
+    q->q2 /= norm;
+    q->q3 /= norm;
+    q->q4 /= norm;
+}
+
+// Rotate a vector from body frame to reference frame
+void quat_rotate_vector(const Quaternion_t* q,
+                        const double v_body[3], double v_ref[3]) {
+    // v_ref = q * [v|0] * q_conjugate (pure quaternion sandwich product)
+    double q1=q->q1, q2=q->q2, q3=q->q3, q4=q->q4;
+    double vx=v_body[0], vy=v_body[1], vz=v_body[2];
+
+    v_ref[0] = (1-2*(q2*q2+q3*q3))*vx + 2*(q1*q2-q3*q4)*vy + 2*(q1*q3+q2*q4)*vz;
+    v_ref[1] = 2*(q1*q2+q3*q4)*vx + (1-2*(q1*q1+q3*q3))*vy + 2*(q2*q3-q1*q4)*vz;
+    v_ref[2] = 2*(q1*q3-q2*q4)*vx + 2*(q2*q3+q1*q4)*vy + (1-2*(q1*q1+q2*q2))*vz;
+}
+```
+
+### Quaternion Integration
+
+Given angular velocity $\boldsymbol{\omega}$ in body frame, propagate the quaternion:
+
+$$\dot{\mathbf{q}} = \frac{1}{2} \mathbf{q} \otimes \begin{pmatrix} \boldsymbol{\omega} \\ 0 \end{pmatrix}$$
+
+```c
+// Integrate quaternion given angular rate (rad/s) and time step (s)
+void quat_propagate(Quaternion_t* q, const double omega[3], double dt) {
+    double wx = omega[0], wy = omega[1], wz = omega[2];
+    double q1=q->q1, q2=q->q2, q3=q->q3, q4=q->q4;
+
+    // Omega matrix times quaternion / 2
+    double dq1 = 0.5 * ( q4*wx - q3*wy + q2*wz);
+    double dq2 = 0.5 * ( q3*wx + q4*wy - q1*wz);
+    double dq3 = 0.5 * (-q2*wx + q1*wy + q4*wz);
+    double dq4 = 0.5 * (-q1*wx - q2*wy - q3*wz);
+
+    q->q1 += dq1 * dt;
+    q->q2 += dq2 * dt;
+    q->q3 += dq3 * dt;
+    q->q4 += dq4 * dt;
+
+    quat_normalize(q);  // renormalize after integration
+}
+```
+
+---
+
+## Convention Warning
+
+There is no universal quaternion convention. Different textbooks, software packages, and sensor vendors use different orderings:
+
+| Convention | Order | Used By |
+|---|---|---|
+| Hamilton | $[q_x, q_y, q_z, q_w]$ | Most aerospace textbooks, MATLAB |
+| JPL | $[q_x, q_y, q_z, q_w]$ with different rotation direction | NASA JPL, many spacecraft |
+| Shuster (passive) | $[q_1, q_2, q_3, q_4]$ | TRIAD, QUEST algorithms |
+
+The difference matters: a quaternion from one convention used directly in code for another convention produces the wrong rotation — often exactly opposite (180° error).
+
+**Rule:** Define your convention explicitly, document it at the top of every file that uses quaternions, and have an explicit conversion when interfacing with external libraries or sensor datasheets.

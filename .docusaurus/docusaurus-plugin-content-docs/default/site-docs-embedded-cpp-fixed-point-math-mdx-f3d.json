@@ -1,0 +1,29 @@
+{
+  "id": "embedded-cpp/fixed-point-math",
+  "title": "Fixed-Point Math",
+  "description": "Full content coming soon. This page is part of the Embedded C/C++ section.",
+  "source": "@site/docs/embedded-cpp/fixed-point-math.mdx",
+  "sourceDirName": "embedded-cpp",
+  "slug": "/embedded-cpp/fixed-point-math",
+  "permalink": "/docs/embedded-cpp/fixed-point-math",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 7,
+  "frontMatter": {
+    "id": "fixed-point-math",
+    "title": "Fixed-Point Math",
+    "sidebar_label": "Fixed-Point Math",
+    "sidebar_position": 7
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Interrupt-Driven Design",
+    "permalink": "/docs/embedded-cpp/interrupt-driven-design"
+  },
+  "next": {
+    "title": "Deterministic C++",
+    "permalink": "/docs/embedded-cpp/deterministic-cpp"
+  }
+}

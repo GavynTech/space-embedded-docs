@@ -1,0 +1,29 @@
+{
+  "id": "orbital-physics/kalman-filter",
+  "title": "Kalman Filter",
+  "description": "Full content coming soon. This page is part of the Orbital Physics section.",
+  "source": "@site/docs/orbital-physics/kalman-filter.mdx",
+  "sourceDirName": "orbital-physics",
+  "slug": "/orbital-physics/kalman-filter",
+  "permalink": "/docs/orbital-physics/kalman-filter",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 7,
+  "frontMatter": {
+    "id": "kalman-filter",
+    "title": "Kalman Filter",
+    "sidebar_label": "Kalman Filter",
+    "sidebar_position": 7
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "ADCS Software",
+    "permalink": "/docs/orbital-physics/adcs-software"
+  },
+  "next": {
+    "title": "Time Systems",
+    "permalink": "/docs/orbital-physics/time-systems"
+  }
+}

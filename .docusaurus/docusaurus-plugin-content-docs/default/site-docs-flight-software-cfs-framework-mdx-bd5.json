@@ -1,0 +1,29 @@
+{
+  "id": "flight-software/cfs-framework",
+  "title": "NASA Core Flight System (cFS)",
+  "description": "cFS is NASA's open-source, reusable flight software framework. It defines an architecture, not just a library — a complete way of structuring spacecraft software that has flown on dozens of missions.",
+  "source": "@site/docs/flight-software/cfs-framework.mdx",
+  "sourceDirName": "flight-software",
+  "slug": "/flight-software/cfs-framework",
+  "permalink": "/docs/flight-software/cfs-framework",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 2,
+  "frontMatter": {
+    "id": "cfs-framework",
+    "title": "NASA Core Flight System (cFS)",
+    "sidebar_label": "NASA cFS",
+    "sidebar_position": 2
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Overview",
+    "permalink": "/docs/flight-software/overview"
+  },
+  "next": {
+    "title": "Command & Telemetry",
+    "permalink": "/docs/flight-software/command-telemetry"
+  }
+}

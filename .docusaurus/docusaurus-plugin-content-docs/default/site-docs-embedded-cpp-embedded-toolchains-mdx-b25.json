@@ -1,0 +1,29 @@
+{
+  "id": "embedded-cpp/embedded-toolchains",
+  "title": "Embedded Toolchains",
+  "description": "Full content coming soon. This page is part of the Embedded C/C++ section.",
+  "source": "@site/docs/embedded-cpp/embedded-toolchains.mdx",
+  "sourceDirName": "embedded-cpp",
+  "slug": "/embedded-cpp/embedded-toolchains",
+  "permalink": "/docs/embedded-cpp/embedded-toolchains",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 9,
+  "frontMatter": {
+    "id": "embedded-toolchains",
+    "title": "Embedded Toolchains",
+    "sidebar_label": "Embedded Toolchains",
+    "sidebar_position": 9
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Deterministic C++",
+    "permalink": "/docs/embedded-cpp/deterministic-cpp"
+  },
+  "next": {
+    "title": "Testing Embedded",
+    "permalink": "/docs/embedded-cpp/testing-embedded"
+  }
+}

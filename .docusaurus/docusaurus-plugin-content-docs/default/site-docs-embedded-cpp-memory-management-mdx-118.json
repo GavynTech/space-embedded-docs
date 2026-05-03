@@ -1,0 +1,29 @@
+{
+  "id": "embedded-cpp/memory-management",
+  "title": "Memory Management",
+  "description": "In flight software, the heap is banned. Static allocation only — memory usage is determined at link time, and it never changes.",
+  "source": "@site/docs/embedded-cpp/memory-management.mdx",
+  "sourceDirName": "embedded-cpp",
+  "slug": "/embedded-cpp/memory-management",
+  "permalink": "/docs/embedded-cpp/memory-management",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 4,
+  "frontMatter": {
+    "id": "memory-management",
+    "title": "Memory Management",
+    "sidebar_label": "Memory Management",
+    "sidebar_position": 4
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "MISRA-C",
+    "permalink": "/docs/embedded-cpp/misra-c"
+  },
+  "next": {
+    "title": "Volatile & Registers",
+    "permalink": "/docs/embedded-cpp/volatile-and-registers"
+  }
+}

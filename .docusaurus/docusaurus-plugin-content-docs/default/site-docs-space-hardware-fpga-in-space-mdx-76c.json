@@ -1,0 +1,29 @@
+{
+  "id": "space-hardware/fpga-in-space",
+  "title": "FPGAs in Space",
+  "description": "Full content coming soon. This page is part of the Space Hardware section.",
+  "source": "@site/docs/space-hardware/fpga-in-space.mdx",
+  "sourceDirName": "space-hardware",
+  "slug": "/space-hardware/fpga-in-space",
+  "permalink": "/docs/space-hardware/fpga-in-space",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "id": "fpga-in-space",
+    "title": "FPGAs in Space",
+    "sidebar_label": "FPGAs in Space",
+    "sidebar_position": 5
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Microcontrollers",
+    "permalink": "/docs/space-hardware/microcontrollers"
+  },
+  "next": {
+    "title": "Spacecraft Buses",
+    "permalink": "/docs/space-hardware/spacecraft-buses"
+  }
+}

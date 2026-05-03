@@ -1,0 +1,29 @@
+{
+  "id": "reference/standards-index",
+  "title": "Standards Index",
+  "description": "The standards ecosystem for space software — what each one covers and when it applies.",
+  "source": "@site/docs/reference/standards-index.mdx",
+  "sourceDirName": "reference",
+  "slug": "/reference/standards-index",
+  "permalink": "/docs/reference/standards-index",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "id": "standards-index",
+    "title": "Standards Index",
+    "sidebar_label": "Standards Index",
+    "sidebar_position": 3
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Glossary",
+    "permalink": "/docs/reference/glossary"
+  },
+  "next": {
+    "title": "Companies",
+    "permalink": "/docs/reference/companies"
+  }
+}

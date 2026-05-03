@@ -1,0 +1,29 @@
+{
+  "id": "space-hardware/radiation-hardening",
+  "title": "Radiation Hardening",
+  "description": "Full content coming soon. This page is part of the Space Hardware section.",
+  "source": "@site/docs/space-hardware/radiation-hardening.mdx",
+  "sourceDirName": "space-hardware",
+  "slug": "/space-hardware/radiation-hardening",
+  "permalink": "/docs/space-hardware/radiation-hardening",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "id": "radiation-hardening",
+    "title": "Radiation Hardening",
+    "sidebar_label": "Radiation Hardening",
+    "sidebar_position": 3
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Radiation Effects",
+    "permalink": "/docs/space-hardware/radiation-effects"
+  },
+  "next": {
+    "title": "Microcontrollers",
+    "permalink": "/docs/space-hardware/microcontrollers"
+  }
+}

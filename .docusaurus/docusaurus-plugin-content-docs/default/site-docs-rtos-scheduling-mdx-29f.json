@@ -1,0 +1,29 @@
+{
+  "id": "rtos/scheduling",
+  "title": "Real-Time Scheduling",
+  "description": "The scheduler is the heart of an RTOS. It decides which task runs, when, and for how long. Understanding scheduling theory is essential for designing a spacecraft flight software architecture that meets its timing requirements.",
+  "source": "@site/docs/rtos/scheduling.mdx",
+  "sourceDirName": "rtos",
+  "slug": "/rtos/scheduling",
+  "permalink": "/docs/rtos/scheduling",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 6,
+  "frontMatter": {
+    "id": "scheduling",
+    "title": "Real-Time Scheduling",
+    "sidebar_label": "Scheduling",
+    "sidebar_position": 6
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Zephyr",
+    "permalink": "/docs/rtos/zephyr"
+  },
+  "next": {
+    "title": "IPC Patterns",
+    "permalink": "/docs/rtos/ipc-patterns"
+  }
+}

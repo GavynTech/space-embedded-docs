@@ -1,0 +1,29 @@
+{
+  "id": "flight-software/fault-management",
+  "title": "Fault Management (FDIR)",
+  "description": "Fault Detection, Isolation, and Recovery (FDIR) is the system that keeps a spacecraft alive when things go wrong — and things always go wrong.",
+  "source": "@site/docs/flight-software/fault-management.mdx",
+  "sourceDirName": "flight-software",
+  "slug": "/flight-software/fault-management",
+  "permalink": "/docs/flight-software/fault-management",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "id": "fault-management",
+    "title": "Fault Management (FDIR)",
+    "sidebar_label": "Fault Management",
+    "sidebar_position": 5
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "State Machines",
+    "permalink": "/docs/flight-software/state-machines"
+  },
+  "next": {
+    "title": "Health & Safety",
+    "permalink": "/docs/flight-software/health-safety"
+  }
+}

@@ -1,0 +1,151 @@
+---
+id: scheduling
+title: Real-Time Scheduling
+sidebar_label: Scheduling
+sidebar_position: 6
+---
+
+# Real-Time Scheduling
+
+The scheduler is the heart of an RTOS. It decides which task runs, when, and for how long. Understanding scheduling theory is essential for designing a spacecraft flight software architecture that meets its timing requirements.
+
+---
+
+## The Problem
+
+You have multiple tasks with timing requirements:
+
+| Task | Period | Deadline | Execution Time |
+|---|---|---|---|
+| Attitude control | 10 ms | 10 ms | 2 ms |
+| Fault monitor | 50 ms | 50 ms | 1 ms |
+| Telemetry packetizer | 100 ms | 100 ms | 5 ms |
+| Command handler | 200 ms | 200 ms | 3 ms |
+
+Can these all be scheduled to meet their deadlines? And which scheduling algorithm should you use?
+
+---
+
+## Rate-Monotonic Scheduling (RMS)
+
+**The rule:** Assign priorities based on period. Shorter period = higher priority.
+
+This is the most common algorithm in practice and maps directly to FreeRTOS/RTEMS priority assignment. It is optimal for fixed-priority scheduling of periodic tasks with deadlines equal to their periods.
+
+For the tasks above:
+- Attitude control (10 ms) → priority 4 (highest)
+- Fault monitor (50 ms) → priority 3
+- Telemetry (100 ms) → priority 2
+- Command handler (200 ms) → priority 1
+
+**Schedulability test:** A task set is schedulable under RMS if:
+
+$$U = \sum_{i=1}^{n} \frac{C_i}{T_i} \leq n(2^{1/n} - 1)$$
+
+Where $C_i$ is execution time, $T_i$ is period, and $n$ is the number of tasks.
+
+For large $n$, the bound approaches $\ln 2 \approx 0.693$. If total CPU utilization is below 69%, the task set is guaranteed schedulable under RMS.
+
+For our example:
+$$U = \frac{2}{10} + \frac{1}{50} + \frac{5}{100} + \frac{3}{200} = 0.2 + 0.02 + 0.05 + 0.015 = 0.285$$
+
+Well below 0.693 — all tasks are guaranteed to meet their deadlines.
+
+---
+
+## Priority Inversion
+
+Priority inversion occurs when a high-priority task is blocked by a low-priority task holding a resource the high-priority task needs.
+
+**Classic scenario:**
+
+```
+Time →
+T_high (P3): [blocked waiting for mutex]─────────────────▓▓▓
+T_med  (P2): ░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░
+T_low  (P1): ░░▓▓[holds mutex]────────────[releases mutex]░░
+```
+
+T_low holds a mutex. T_high needs it. T_high blocks. T_med (which doesn't need the mutex) preempts T_low and runs, indirectly delaying T_high — a high-priority task is blocked by a medium-priority task through a low-priority intermediary.
+
+This was responsible for the **Mars Pathfinder priority inversion** (1997) — the spacecraft's watchdog reset because a high-priority telemetry task was starved by medium-priority tasks while waiting for a mutex held by a low-priority task.
+
+### Priority Inheritance Protocol (PIP)
+
+When T_high blocks on a mutex held by T_low, T_low temporarily inherits T_high's priority:
+
+```
+T_high (P3): [blocked]────────────────────────▓▓▓
+T_med  (P2): ░░░░[preempted by T_low*]░░░░░░░░░░░
+T_low* (P1→P3): ░░▓▓[inherits P3, completes quickly]░
+```
+
+T_low runs at P3, finishes, releases the mutex. T_high unblocks immediately. T_med never gets to run during the critical section.
+
+FreeRTOS mutexes implement priority inheritance. Semaphores do not — this is a key reason to use mutexes, not semaphores, for mutual exclusion.
+
+### Priority Ceiling Protocol (PCP)
+
+A stronger alternative: each mutex is assigned a priority ceiling equal to the highest priority of any task that ever acquires it. A task can only acquire a mutex if its priority is higher than the ceiling of all currently held mutexes.
+
+PCP prevents all deadlocks and bounds the blocking time to at most one critical section. RTEMS supports PCP. FreeRTOS does not.
+
+---
+
+## Earliest Deadline First (EDF)
+
+Dynamic scheduling algorithm: at each scheduling point, the task with the nearest absolute deadline runs.
+
+EDF is theoretically optimal — it can schedule any task set with $U \leq 1.0$ (100% CPU utilization). RMS can only guarantee schedulability up to ~69%.
+
+**Why isn't EDF used everywhere?**
+- Requires dynamic priority management — more overhead
+- Behavior under overload is unpredictable — when $U > 1$, tasks miss deadlines in hard-to-predict ways
+- Harder to analyze and certify
+- Priority inversion analysis is more complex
+
+Most spacecraft flight software uses RMS with fixed priorities. EDF sees more use in real-time Linux systems.
+
+---
+
+## The Mars Pathfinder Incident
+
+In 1997, the Mars Pathfinder spacecraft began experiencing unexpected resets shortly after landing. The spacecraft's watchdog was resetting the system because the high-priority meteorological data bus task was missing its deadline.
+
+Root cause: classic unbounded priority inversion.
+- A low-priority task held the VxWorks IPC mutex
+- A medium-priority task preempted it and ran for an extended period
+- The high-priority bus task blocked waiting for the mutex
+- The watchdog fired because the bus task missed its deadline
+
+Fix: enable priority inheritance on the mutex (VxWorks supported it but it was not configured by default). The fix was uplinked to the spacecraft and resolved the issue.
+
+**Lesson:** Priority inheritance must be explicitly configured, not assumed. Test your synchronization patterns under realistic load before launch.
+
+---
+
+## Practical Priority Assignment for Spacecraft
+
+```c
+// Priority assignments for a typical small satellite FSW
+// Higher number = higher priority (FreeRTOS convention)
+
+// Safety-critical — must never be blocked
+#define TASK_PRIORITY_FAULT_DETECTION    7   // FDIR monitor
+#define TASK_PRIORITY_WATCHDOG_KICK      6   // ensures WDT is fed
+
+// Mission-critical — timing directly affects mission success
+#define TASK_PRIORITY_ATTITUDE_CONTROL   5   // 10 ms control loop
+#define TASK_PRIORITY_POWER_MANAGEMENT   4   // power state machine
+
+// Operational — important but tolerates some delay
+#define TASK_PRIORITY_COMMAND_HANDLER    3   // uplink command processing
+#define TASK_PRIORITY_COMMS_PROTOCOL     3   // link layer
+
+// Support — runs when higher priorities are idle
+#define TASK_PRIORITY_TELEMETRY          2   // housekeeping downlink
+#define TASK_PRIORITY_DATA_STORAGE       1   // file system writes
+#define TASK_PRIORITY_BACKGROUND         0   // diagnostics, not in FreeRTOS
+```
+
+Never assign the same priority to tasks that share resources — priority inversion analysis becomes significantly more complex.

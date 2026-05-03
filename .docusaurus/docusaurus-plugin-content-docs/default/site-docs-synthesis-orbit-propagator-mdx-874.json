@@ -1,0 +1,29 @@
+{
+  "id": "synthesis/orbit-propagator",
+  "title": "Orbit Propagator",
+  "description": "Full content coming soon. This page is part of the Synthesis section.",
+  "source": "@site/docs/synthesis/orbit-propagator.mdx",
+  "sourceDirName": "synthesis",
+  "slug": "/synthesis/orbit-propagator",
+  "permalink": "/docs/synthesis/orbit-propagator",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 7,
+  "frontMatter": {
+    "id": "orbit-propagator",
+    "title": "Orbit Propagator",
+    "sidebar_label": "Orbit Propagator",
+    "sidebar_position": 7
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "TMR Voter",
+    "permalink": "/docs/synthesis/tmr-voter"
+  },
+  "next": {
+    "title": "Power Budget Manager",
+    "permalink": "/docs/synthesis/power-budget-manager"
+  }
+}

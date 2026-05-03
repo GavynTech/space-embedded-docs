@@ -1,0 +1,13 @@
+# Dependencies
+node_modules
+
+# Build output
+build
+.docusaurus
+
+# Generated files
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*

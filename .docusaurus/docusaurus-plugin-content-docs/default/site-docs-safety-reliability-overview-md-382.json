@@ -1,0 +1,29 @@
+{
+  "id": "safety-reliability/overview",
+  "title": "Safety & Reliability Overview",
+  "description": "Writing the code is the easy part. Proving the code is correct — that it does what it is supposed to do, under all conditions, including ones you didn't anticipate — is the hard part.",
+  "source": "@site/docs/safety-reliability/overview.md",
+  "sourceDirName": "safety-reliability",
+  "slug": "/safety-reliability/overview",
+  "permalink": "/docs/safety-reliability/overview",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 1,
+  "frontMatter": {
+    "id": "overview",
+    "title": "Safety & Reliability Overview",
+    "sidebar_label": "Overview",
+    "sidebar_position": 1
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Link Budget",
+    "permalink": "/docs/orbital-physics/link-budget"
+  },
+  "next": {
+    "title": "DO-178C",
+    "permalink": "/docs/safety-reliability/do-178c"
+  }
+}

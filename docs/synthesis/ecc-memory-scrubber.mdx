@@ -1,0 +1,252 @@
+---
+id: ecc-memory-scrubber
+title: ECC Memory Scrubber
+sidebar_label: ECC Memory Scrubber
+sidebar_position: 5
+---
+
+# ECC Memory Scrubber
+
+A memory scrubber is a background task that periodically reads every byte of protected SRAM, allowing the ECC hardware to detect and correct single-bit errors before a second bit flip in the same word makes the error uncorrectable.
+
+This is one of the most important radiation mitigation techniques in spacecraft software — and one of the simplest to implement correctly.
+
+---
+
+## Why Scrubbing Is Necessary
+
+SRAM protected by ECC can correct single-bit errors and detect (but not correct) double-bit errors. But ECC only acts when memory is *read*. If a bit flips and is never read, another bit in the same word may flip before the first error is noticed. Now you have a double-bit error — detected but uncorrectable.
+
+**Without scrubbing:**
+1. Bit A flips in address 0x20001000 (SEU) — ECC notes 1-bit error on next read
+2. 3 days later, bit B flips in the same word — now a 2-bit error
+3. Next read: ECC detects double-bit error → generates fault → triggers safe mode
+
+**With scrubbing:**
+1. Bit A flips (SEU)
+2. Scrubber reads 0x20001000 within 10 minutes — ECC corrects bit A, writes back corrected value
+3. Memory is clean again
+
+The scrub interval determines your protection window. For LEO at 10–100 SEUs/day in 1 MB of SRAM, one scrub every few minutes is typically sufficient.
+
+---
+
+## ECC Hardware Interface
+
+On most spacecraft processors (RAD750, LEON3, ARM Cortex-R with ECC), the ECC logic is transparent to the software for corrections — the hardware reads, checks, corrects, and writes back automatically on a memory access.
+
+The software interface is through status/error registers:
+
+```c
+// Example: LEON3 EDAC controller register map
+#define EDAC_BASE           0x80000200UL
+#define EDAC_STATUS_REG     (*(volatile uint32_t*)(EDAC_BASE + 0x00))
+#define EDAC_FAILING_ADDR   (*(volatile uint32_t*)(EDAC_BASE + 0x04))
+#define EDAC_ERROR_COUNT    (*(volatile uint32_t*)(EDAC_BASE + 0x08))
+
+// Status register bits
+#define EDAC_CE_FLAG        (1U << 0)   // correctable error occurred
+#define EDAC_UE_FLAG        (1U << 1)   // uncorrectable error occurred
+#define EDAC_CE_CLEAR       (1U << 8)   // write 1 to clear CE flag
+
+typedef struct {
+    uint32_t ce_count;          // correctable errors detected
+    uint32_t ue_count;          // uncorrectable errors
+    uint32_t last_ce_address;   // address of last corrected error
+    uint32_t last_ue_address;   // address of last uncorrected error
+} EDAC_Stats_t;
+
+static EDAC_Stats_t edac_stats = {0};
+
+// Check and clear EDAC status — called after scrub operations
+void edac_check_status(uint32_t scrubbed_address) {
+    uint32_t status = EDAC_STATUS_REG;
+
+    if (status & EDAC_CE_FLAG) {
+        edac_stats.ce_count++;
+        edac_stats.last_ce_address = EDAC_FAILING_ADDR;
+
+        // Log correctable error — important for trend analysis
+        log_event(EVENT_ECC_CORRECTED,
+                  edac_stats.last_ce_address,
+                  edac_stats.ce_count);
+
+        // Clear the flag
+        EDAC_STATUS_REG = EDAC_CE_CLEAR;
+    }
+
+    if (status & EDAC_UE_FLAG) {
+        edac_stats.ue_count++;
+        edac_stats.last_ue_address = EDAC_FAILING_ADDR;
+
+        // Uncorrectable error — this is serious
+        log_event(EVENT_ECC_UNCORRECTABLE,
+                  edac_stats.last_ue_address,
+                  edac_stats.ue_count);
+
+        // Report to fault management
+        fdir_report_anomaly(ANOMALY_ECC_UNCORRECTABLE,
+                            edac_stats.last_ue_address);
+    }
+}
+```
+
+---
+
+## The Scrubber Task
+
+```c
+// Memory regions to scrub — defined at link time
+extern uint32_t __sram_start;
+extern uint32_t __sram_end;
+extern uint32_t __sram_critical_start;
+extern uint32_t __sram_critical_end;
+
+#define SCRUB_CHUNK_SIZE_BYTES   4096U  // scrub 4 KB per iteration
+#define SCRUB_INTERVAL_MS        100U   // yield every 100 ms
+
+typedef struct {
+    uint32_t* current_addr;     // current scrub position
+    uint32_t* region_start;
+    uint32_t* region_end;
+    uint32_t  scrubs_completed; // full-pass counter
+    uint32_t  ce_total;         // lifetime CE count
+} Scrubber_State_t;
+
+static Scrubber_State_t scrubber = {0};
+
+void scrubber_init(void) {
+    scrubber.region_start  = &__sram_start;
+    scrubber.region_end    = &__sram_end;
+    scrubber.current_addr  = scrubber.region_start;
+    scrubber.scrubs_completed = 0;
+}
+
+// Scrub one chunk — call from task, yields between chunks
+void scrubber_run_chunk(void) {
+    uint32_t* end_of_chunk = scrubber.current_addr +
+                             (SCRUB_CHUNK_SIZE_BYTES / sizeof(uint32_t));
+
+    if (end_of_chunk > scrubber.region_end) {
+        end_of_chunk = scrubber.region_end;
+    }
+
+    // Read each word — ECC hardware auto-corrects and logs errors
+    // The read itself triggers ECC correction; we also check status
+    volatile uint32_t* p = (volatile uint32_t*)scrubber.current_addr;
+    while (p < (volatile uint32_t*)end_of_chunk) {
+        volatile uint32_t val = *p;  // triggers ECC check
+        (void)val;                   // suppress unused-variable warning
+        p++;
+    }
+
+    // Check if ECC detected anything during this chunk
+    edac_check_status((uint32_t)scrubber.current_addr);
+
+    // Advance position
+    scrubber.current_addr = (uint32_t*)end_of_chunk;
+
+    // Wrap around — completed one full pass
+    if (scrubber.current_addr >= scrubber.region_end) {
+        scrubber.current_addr = scrubber.region_start;
+        scrubber.scrubs_completed++;
+
+        log_event(EVENT_SCRUB_PASS_COMPLETE,
+                  scrubber.scrubs_completed,
+                  edac_stats.ce_count);
+    }
+}
+
+// RTOS task — runs continuously in background
+void vScrubberTask(void* pvParams) {
+    scrubber_init();
+
+    for (;;) {
+        scrubber_run_chunk();
+
+        // Yield — let higher-priority tasks run
+        // 100 ms between chunks: 4 KB * (total_RAM / 4096) = scrub time
+        // For 1 MB SRAM: 256 chunks * 100 ms = ~25 seconds per full pass
+        vTaskDelay(pdMS_TO_TICKS(SCRUB_INTERVAL_MS));
+    }
+}
+```
+
+---
+
+## Critical Memory Priority Scrubbing
+
+Not all memory is equal. Code in SRAM, active flight software state, and attitude control data are more critical than buffered telemetry. A scrubber can prioritize:
+
+```c
+// Two-region scrubber: critical memory scrubbed 10x more frequently
+
+#define CRITICAL_SCRUB_RATIO  10  // scrub critical region 10x per general region pass
+
+static uint32_t critical_scrub_counter = 0;
+
+void scrubber_run_prioritized(void) {
+    // Always scrub critical region
+    scrub_region(&__sram_critical_start, &__sram_critical_end,
+                 SCRUB_CHUNK_SIZE_BYTES);
+
+    // Only scrub general region 1 in N cycles
+    critical_scrub_counter++;
+    if (critical_scrub_counter >= CRITICAL_SCRUB_RATIO) {
+        critical_scrub_counter = 0;
+        scrub_region(&__sram_start, &__sram_end, SCRUB_CHUNK_SIZE_BYTES);
+    }
+}
+```
+
+---
+
+## Scrub Rate Analysis
+
+How often must you scrub to keep uncorrectable error probability below mission requirements?
+
+Given:
+- Single-event upset rate: $\lambda = 50$ upsets/day in 1 MB SRAM = $5.8 \times 10^{-4}$ upsets/second
+- Word size: 32 bits (4 bytes)
+- Words in 1 MB: 262,144 words
+- Per-word SEU rate: $\lambda_w = \lambda / 262144 = 2.2 \times 10^{-9}$ upsets/second/word
+
+Probability of a second upset in the same word before scrub interval $T_s$:
+
+$$P_{UE} \approx \lambda_w \cdot T_s \cdot \lambda_w \cdot T_s / 2 \cdot N_{words}$$
+
+For $T_s = 1800$ s (30 min) and 262,144 words:
+
+$$P_{UE} \approx (2.2 \times 10^{-9})^2 \times (1800)^2 / 2 \times 262144 \approx 2.3 \times 10^{-6} \text{ per day}$$
+
+Acceptable for most missions. Tightening $T_s$ to 300 s (5 min) reduces this by $36\times$.
+
+---
+
+## Integration with Fault Management
+
+The scrubber should report to the spacecraft's fault management system:
+
+```c
+// Thresholds — tuned for mission radiation environment
+#define CE_RATE_WARNING_PER_HOUR    10    // investigate if exceeded
+#define CE_RATE_CRITICAL_PER_HOUR   50    // trigger safe mode evaluation
+#define UE_COUNT_SAFE_MODE_TRIGGER   3    // 3 UEs → mandatory safe mode
+
+// Called hourly by health monitor
+void scrubber_health_check(void) {
+    float ce_rate = (float)(edac_stats.ce_count - edac_stats.ce_count_last_hour)
+                  / 1.0f;
+    edac_stats.ce_count_last_hour = edac_stats.ce_count;
+
+    if (ce_rate > CE_RATE_CRITICAL_PER_HOUR) {
+        fdir_report_anomaly(ANOMALY_HIGH_CE_RATE, (uint32_t)ce_rate);
+    }
+
+    if (edac_stats.ue_count >= UE_COUNT_SAFE_MODE_TRIGGER) {
+        fdir_report_anomaly(ANOMALY_UE_THRESHOLD_EXCEEDED, edac_stats.ue_count);
+    }
+}
+```
+
+A rising correctable error rate is an early indicator of increasing radiation environment (approaching SAA, solar event) or hardware degradation (TID). Logging it allows mission operators to respond proactively.

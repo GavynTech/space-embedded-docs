@@ -1,0 +1,29 @@
+{
+  "id": "orbital-physics/attitude-representation",
+  "title": "Attitude Representation",
+  "description": "Attitude is the orientation of a spacecraft's body frame relative to a reference frame. Representing, tracking, and controlling attitude is the central problem of the ADCS system.",
+  "source": "@site/docs/orbital-physics/attitude-representation.mdx",
+  "sourceDirName": "orbital-physics",
+  "slug": "/orbital-physics/attitude-representation",
+  "permalink": "/docs/orbital-physics/attitude-representation",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "id": "attitude-representation",
+    "title": "Attitude Representation",
+    "sidebar_label": "Attitude Representation",
+    "sidebar_position": 5
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Coordinate Frames",
+    "permalink": "/docs/orbital-physics/coordinate-frames"
+  },
+  "next": {
+    "title": "ADCS Software",
+    "permalink": "/docs/orbital-physics/adcs-software"
+  }
+}

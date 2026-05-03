@@ -1,0 +1,87 @@
+---
+id: memory-management
+title: Memory Management
+sidebar_label: Memory Management
+sidebar_position: 4
+---
+
+# Memory Management
+
+In flight software, the heap is banned. Static allocation only — memory usage is determined at link time, and it never changes.
+
+## Why No malloc
+
+`malloc` can fail due to heap fragmentation. On a spacecraft, a failed allocation at a critical moment has no safe recovery path. Static allocation means:
+
+1. Memory use is 100% determinable at build time
+2. No runtime allocation failures
+3. No fragmentation — ever
+4. Simpler MISRA-C compliance (Rule 21.3 forbids dynamic memory)
+
+## Static Allocation Patterns
+
+```c
+// Global static buffer — allocated at link time in .bss
+static uint8_t telemetry_buffer[4096];
+
+// Stack-allocated — function scope only, within stack budget
+void process_packet(void) {
+    uint8_t local_buf[128];  // lives on stack for duration of function
+    // ...
+}
+
+// Static local — persists across calls, not on heap
+void sensor_accumulate(int16_t sample) {
+    static int32_t accumulator = 0;
+    static uint32_t count = 0;
+    accumulator += sample;
+    count++;
+}
+```
+
+## Memory Pool
+
+When you need "dynamic-like" behavior (varying number of objects), use a pre-allocated pool:
+
+```c
+#define POOL_SIZE  16
+#define OBJ_SIZE   sizeof(Command_t)
+
+static uint8_t   pool_mem[POOL_SIZE][OBJ_SIZE];
+static bool      pool_used[POOL_SIZE] = {false};
+
+void* pool_alloc(void) {
+    for (int i = 0; i < POOL_SIZE; i++) {
+        if (!pool_used[i]) {
+            pool_used[i] = true;
+            return pool_mem[i];
+        }
+    }
+    return NULL;  // pool exhausted — handle at call site
+}
+
+void pool_free(void* ptr) {
+    for (int i = 0; i < POOL_SIZE; i++) {
+        if ((void*)pool_mem[i] == ptr) {
+            pool_used[i] = false;
+            return;
+        }
+    }
+}
+```
+
+## Stack Sizing
+
+Each RTOS task needs its own stack. Size it by:
+
+1. Enabling stack overflow detection (FreeRTOS Method 2)
+2. Running worst-case scenarios in test
+3. Checking `uxTaskGetStackHighWaterMark()` — the number of unused words
+4. Adding 30% margin above measured worst-case
+
+```c
+// Check stack headroom during development
+UBaseType_t high_water = uxTaskGetStackHighWaterMark(adcs_task_handle);
+// high_water is the minimum number of words that were ever free
+// If this is less than ~32 words, increase the stack
+```

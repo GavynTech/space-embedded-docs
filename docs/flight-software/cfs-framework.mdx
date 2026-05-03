@@ -1,0 +1,242 @@
+---
+id: cfs-framework
+title: NASA Core Flight System (cFS)
+sidebar_label: NASA cFS
+sidebar_position: 2
+---
+
+# NASA Core Flight System (cFS)
+
+cFS is NASA's open-source, reusable flight software framework. It defines an architecture, not just a library — a complete way of structuring spacecraft software that has flown on dozens of missions.
+
+It is available at [github.com/nasa/cFS](https://github.com/nasa/cFS) under the Apache 2.0 license.
+
+---
+
+## Architecture Overview
+
+cFS is built on three core components:
+
+| Component | Purpose |
+|---|---|
+| **OSAL** (OS Abstraction Layer) | Abstracts RTOS — one API for FreeRTOS, RTEMS, POSIX Linux |
+| **PSP** (Platform Support Package) | Board-specific abstraction — memory map, startup, timers |
+| **cFE** (Core Flight Executive) | Runtime services: Software Bus, Time, Events, Tables, Executive |
+
+Applications (apps) run on top of cFE and communicate exclusively through the Software Bus.
+
+```
+┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐
+│  ADCS   │ │  EPS    │ │  Comms  │ │  HK App  │
+│   App   │ │  App    │ │  App    │ │          │
+└────┬────┘ └────┬────┘ └────┬────┘ └────┬─────┘
+     │           │           │           │
+     └───────────┴───────────┴───────────┘
+                      │
+              ┌───────▼───────┐
+              │  Software Bus │  ← publish/subscribe message bus
+              └───────┬───────┘
+                      │
+        ┌─────────────┼─────────────┐
+        │             │             │
+   ┌────▼───┐   ┌─────▼──┐   ┌─────▼──┐
+   │  EVS   │   │  TIME  │   │  TBL   │
+   │ Events │   │ Service│   │ Tables │
+   └────────┘   └────────┘   └────────┘
+              ┌─────────────┐
+              │     OSAL    │
+              └──────┬──────┘
+              ┌──────▼──────┐
+              │     PSP     │
+              └──────┬──────┘
+              ┌──────▼──────┐
+              │    RTOS     │
+              └─────────────┘
+```
+
+---
+
+## The Software Bus (SB)
+
+The Software Bus is cFS's central message routing system. Applications communicate by **publishing** messages to the bus and **subscribing** to message IDs they care about. No app has a direct dependency on any other app.
+
+**Message IDs (MID)** are 16-bit values defined in a mission header:
+
+```c
+// mission_msgids.h
+#define ADCS_CMD_MID        0x1880   // commands TO the ADCS app
+#define ADCS_TELEMETRY_MID  0x0880   // telemetry FROM the ADCS app
+#define HK_SEND_HK_MID      0x18B0   // housekeeping request
+```
+
+**Sending a message:**
+
+```c
+// In ADCS app — publish attitude telemetry
+ADCS_HkTlm_t hk_packet;
+
+// Fill telemetry
+hk_packet.q[0] = attitude.q0;
+hk_packet.q[1] = attitude.q1;
+hk_packet.q[2] = attitude.q2;
+hk_packet.q[3] = attitude.q3;
+hk_packet.mode = current_mode;
+
+// Set CCSDS header
+CFE_SB_TimeStampMsg(CFE_MSG_PTR(hk_packet.TelemetryHeader));
+CFE_SB_TransmitMsg(CFE_MSG_PTR(hk_packet.TelemetryHeader), true);
+```
+
+**Receiving messages:**
+
+```c
+// In ADCS app main loop — wait for messages
+void ADCS_AppMain(void) {
+    CFE_SB_Buffer_t* SBBufPtr;
+
+    // Subscribe to messages this app cares about
+    CFE_SB_Subscribe(ADCS_CMD_MID, ADCS_Global.CmdPipe);
+    CFE_SB_Subscribe(HK_SEND_HK_MID, ADCS_Global.CmdPipe);
+
+    while (1) {
+        // Block waiting for a message on our pipe
+        CFE_SB_ReceiveBuffer(&SBBufPtr, ADCS_Global.CmdPipe, CFE_SB_PEND_FOREVER);
+
+        CFE_MSG_FcnCode_t FcnCode;
+        CFE_MSG_GetFcnCode(&SBBufPtr->Msg, &FcnCode);
+
+        switch (CFE_MSG_GetMsgId(&SBBufPtr->Msg)) {
+            case ADCS_CMD_MID:
+                ADCS_ProcessCmd(SBBufPtr);
+                break;
+            case HK_SEND_HK_MID:
+                ADCS_SendHkTelemetry();
+                break;
+            default:
+                CFE_EVS_SendEvent(ADCS_MID_ERR_EID, CFE_EVS_EventType_ERROR,
+                    "Unknown MID: 0x%04X", CFE_MSG_GetMsgId(&SBBufPtr->Msg));
+                break;
+        }
+    }
+}
+```
+
+---
+
+## cFE Services
+
+### Event Service (EVS)
+
+EVS provides a standardized logging and event system. Apps report events (informational, debug, errors, critical) through EVS rather than printf.
+
+```c
+// Register events at app init
+CFE_EVS_Register(ADCS_EventFilters, ADCS_EVENT_COUNT, CFE_EVS_EventFilter_BINARY);
+
+// Log events
+CFE_EVS_SendEvent(ADCS_INIT_INF_EID, CFE_EVS_EventType_INFORMATION,
+    "ADCS App initialized, version %d.%d", ADCS_MAJOR_VERSION, ADCS_MINOR_VERSION);
+
+CFE_EVS_SendEvent(ADCS_CMD_ERR_EID, CFE_EVS_EventType_ERROR,
+    "Invalid command code: %d", cmd_code);
+```
+
+EVS routes events to the ground via telemetry and to on-board storage — it's the spacecraft equivalent of a logging framework.
+
+### Time Service (TIME)
+
+All apps use cFE TIME for timestamps — never `gettimeofday()` or a bare hardware timer. TIME maintains spacecraft mission elapsed time (MET) and can be synchronized with GPS or ground uplink.
+
+```c
+CFE_TIME_SysTime_t timestamp = CFE_TIME_GetTime();
+// timestamp.Seconds: seconds since mission epoch
+// timestamp.Subseconds: fractional seconds (2^-32 second units)
+```
+
+### Table Service (TBL)
+
+Parameters that may need to be updated in flight (PID gains, telemetry limits, attitude target) are stored in TBL tables. Tables can be uplinked and applied without restarting the app.
+
+```c
+// Load table at init
+CFE_TBL_Register(&ADCS_Global.GainsTableHandle,
+    "ADCS.Gains", sizeof(ADCS_GainsTbl_t),
+    CFE_TBL_OPT_DEFAULT, ADCS_GainsTableValidate);
+
+CFE_TBL_Load(ADCS_Global.GainsTableHandle,
+    CFE_TBL_SRC_FILE, "/cf/adcs_gains.tbl");
+
+// Use table data
+ADCS_GainsTbl_t* gains_ptr;
+CFE_TBL_GetAddress((void**)&gains_ptr, ADCS_Global.GainsTableHandle);
+double kp = gains_ptr->kp;
+CFE_TBL_ReleaseAddress(ADCS_Global.GainsTableHandle);
+```
+
+This is how you change PID gains on a spacecraft in orbit without a software update.
+
+---
+
+## OSAL — Writing Portable Flight Software
+
+OSAL (OS Abstraction Layer) provides a single API that works on FreeRTOS, RTEMS, VxWorks, and POSIX Linux. Flight software written against OSAL can run on any of them.
+
+```c
+// Create a task — same code regardless of underlying RTOS
+OS_TaskCreate(
+    &task_id,              // output: task ID
+    "ADCS_CTRL",           // name
+    ADCS_ControlTask,      // function pointer
+    stack_ptr,             // stack buffer
+    stack_size,            // stack size
+    ADCS_CTRL_PRIORITY,    // priority
+    0                      // flags
+);
+
+// Semaphores
+OS_BinSemCreate(&sem_id, "DATA_RDY", 0, 0);
+OS_BinSemGive(sem_id);   // from ISR or producer
+OS_BinSemTake(sem_id);   // blocks consumer
+```
+
+The same application code runs on the embedded target and on a Linux workstation for testing. This is the primary value proposition of cFS for ground test and continuous integration.
+
+---
+
+## App Lifecycle
+
+Every cFS app implements the same three-phase lifecycle:
+
+```c
+void MY_AppMain(void) {
+    uint32 RunStatus = CFE_ES_RunStatus_APP_RUN;
+
+    // 1. Initialize
+    MY_AppInit();
+
+    // 2. Run — main loop
+    while (CFE_ES_RunLoop(&RunStatus) == true) {
+        CFE_SB_Buffer_t* BufPtr;
+        CFE_SB_ReceiveBuffer(&BufPtr, MY_Global.CmdPipe, MY_TIMEOUT_MSEC);
+        MY_ProcessMsg(BufPtr);
+    }
+
+    // 3. Exit — clean up
+    MY_AppCleanup();
+    CFE_ES_ExitApp(RunStatus);
+}
+```
+
+The `CFE_ES_RunLoop()` check allows the Executive Service to command an app to stop gracefully — critical for in-flight software restarts.
+
+---
+
+## Why cFS Matters
+
+Before cFS, every mission wrote FSW from scratch. The same command handler, telemetry packer, and housekeeping app were rewritten for each mission — and each rewrite introduced new bugs.
+
+cFS solves this by:
+1. Providing battle-tested, reusable infrastructure apps (command router, telemetry output, housekeeping, stored commands)
+2. Defining a standard interface (SB messages + CCSDS headers) that makes apps composable
+3. Enabling desktop simulation — test your app on Linux before the hardware exists
+4. Accelerating new mission development — focus engineering time on mission-unique software, not plumbing
