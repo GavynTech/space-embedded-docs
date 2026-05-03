@@ -4,9 +4,9 @@ A practitioner reference for flight software and space systems engineering — C
 
 Not a tutorial. A reference for engineers writing code that flies.
 
-**[space-embedded-docs.vercel.app](https://space-embedded-docs.vercel.app)**
 
----
+
+
 
 ## What's Inside
 
@@ -24,11 +24,9 @@ Not a tutorial. A reference for engineers writing code that flies.
 
 **Synthesis** — Full implementations: attitude control loop, ECC scrubber, TMR voter, CCSDS parser, safe mode FSM, telemetry pipeline.
 
----
 
 
 
----
 
 ## Run Locally
 
