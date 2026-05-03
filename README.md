@@ -26,9 +26,7 @@ Not a tutorial. A reference for engineers writing code that flies.
 
 ---
 
-## Who This Is For
 
-Engineers targeting flight software roles at companies like Firefly, Relativity Space, Rocket Lab, Spire, Planet Labs. Strong C/C++ assumed — no aerospace background required.
 
 ---
 
