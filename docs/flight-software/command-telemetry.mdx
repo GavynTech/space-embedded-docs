@@ -7,6 +7,166 @@ sidebar_position: 3
 
 # Command & Telemetry
 
-*Full content coming soon. This page is part of the Flight Software section.*
+Command and telemetry (C&T) is the nervous system of a spacecraft. Commands flow from ground to vehicle; telemetry flows back. Every space mission depends on this link being reliable, authenticated, and deterministic.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Architecture Overview
+
+```
+Ground Station
+     │  Uplink (Commands)
+     ▼
+Telecommand Decoder → Command Router → App Command Handlers
+                                              │
+                              ┌───────────────┤
+                              │               │
+                         Immediate Cmd   Stored Cmd
+                         (execute now)  (execute later)
+
+App Telemetry Producers → Telemetry Server → Downlink Encoder
+                                                    │  Downlink (TM)
+                                                    ▼
+                                            Ground Station
+```
+
+---
+
+## CCSDS Protocol Layer
+
+The Consultative Committee for Space Data Systems (CCSDS) defines the standard framing used by virtually all spacecraft:
+
+### Telecommand (TC) Frame
+
+| Field | Size | Description |
+|-------|------|-------------|
+| Transfer Frame Header | 5 bytes | SCID, VCID, frame length |
+| Frame Data Field | Variable | Encoded command packets |
+| Frame Error Control | 2 bytes | CRC-16 |
+
+### Telemetry (TM) Frame
+
+| Field | Size | Description |
+|-------|------|-------------|
+| Primary Header | 6 bytes | Master channel ID, frame count |
+| Secondary Header | Variable | Mission-specific timestamps |
+| Data Field | Variable | Telemetry packets |
+| Frame Error Control | 2 bytes | CRC-16 |
+
+---
+
+## Command Packet Structure
+
+```c
+typedef struct {
+    uint16_t stream_id;       // App ID + command bit
+    uint16_t sequence;        // Sequence count
+    uint16_t length;          // Total packet length - 7
+    uint8_t  function_code;   // Which command
+    uint16_t checksum;        // One's complement sum
+    uint8_t  payload[];       // Command parameters
+} __attribute__((packed)) CmdPacket_t;
+```
+
+### Command Authentication
+
+For missions requiring authentication, commands carry a Message Authentication Code (MAC):
+
+```c
+bool cmd_authenticate(const CmdPacket_t *pkt) {
+    uint8_t mac[32];
+    hmac_sha256(secret_key, KEY_LEN,
+                (uint8_t*)pkt, pkt->length - MAC_LEN,
+                mac);
+    return memcmp(mac, pkt->payload + pkt->length - MAC_LEN - 7, 32) == 0;
+}
+```
+
+---
+
+## Command Types
+
+| Type | Description | Timing |
+|------|-------------|--------|
+| Immediate | Execute at receipt | < 1 scheduler tick |
+| Time-Tagged | Execute at absolute time | Stored until T |
+| Relative | Execute N seconds from now | Stored with offset |
+| Stored Sequence | Pre-uploaded command sequence | Triggered by event or time |
+
+---
+
+## Telemetry Packet Structure
+
+```c
+typedef struct {
+    uint16_t stream_id;
+    uint16_t sequence;
+    uint16_t length;
+    uint32_t seconds;         // Mission elapsed time seconds
+    uint16_t subseconds;      // 1/65536 second resolution
+    uint8_t  data[];
+} __attribute__((packed)) TlmPacket_t;
+```
+
+---
+
+## Telemetry Channels
+
+| Channel | Rate | Purpose |
+|---------|------|---------|
+| HK (Housekeeping) | 1 Hz | Always-on health data |
+| Engineering | 0.1–10 Hz | Subsystem states |
+| Science | Variable | Payload data |
+| Event Messages | On-demand | Errors, state changes |
+| Memory Dump | On-demand | Diagnostic data |
+
+---
+
+## Command Validation
+
+Every command handler must validate inputs before execution:
+
+```c
+CFE_Status_t MyApp_CmdNoop(const CFE_SB_Buffer_t *BufPtr) {
+    if (CFE_MSG_GetSize(&BufPtr->Msg) != sizeof(MyApp_NoopCmd_t)) {
+        CFE_EVS_SendEvent(MYAPP_CMD_LEN_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "Invalid cmd length");
+        MyApp_Data.ErrCounter++;
+        return CFE_STATUS_BAD_COMMAND_CODE;
+    }
+    MyApp_Data.CmdCounter++;
+    CFE_EVS_SendEvent(MYAPP_NOOP_INF_EID, CFE_EVS_EventType_INFORMATION,
+                      "NOOP command received");
+    return CFE_SUCCESS;
+}
+```
+
+---
+
+## Sequence Count Validation
+
+The ground station and spacecraft maintain synchronized sequence counters. The onboard receiver rejects packets with unexpected sequence counts, protecting against replay attacks:
+
+```c
+static uint16_t expected_seq = 0;
+
+bool cmd_check_sequence(const CmdPacket_t *pkt) {
+    uint16_t seq = pkt->sequence & 0x3FFF; // lower 14 bits
+    if (seq != expected_seq) {
+        log_event(EVT_CMD_SEQ_ERR, seq, expected_seq);
+        return false;
+    }
+    expected_seq = (expected_seq + 1) & 0x3FFF;
+    return true;
+}
+```
+
+---
+
+## Key References
+
+- [Flight Software Overview](./overview)
+- [NASA cFS Framework](./cfs-framework)
+- [CCSDS Parser Implementation](../synthesis/ccsds-parser)
+- [Telemetry Pipeline](../synthesis/telemetry-pipeline)
+- [Ground Interface](./ground-interface)

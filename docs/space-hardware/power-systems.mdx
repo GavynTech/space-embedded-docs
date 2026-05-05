@@ -5,8 +5,156 @@ sidebar_label: Power Systems
 sidebar_position: 7
 ---
 
-# Power Systems
+# Spacecraft Power Systems
 
-*Full content coming soon. This page is part of the Space Hardware section.*
+Power is the most fundamental constraint in spacecraft design. Every watt of payload power must be generated, stored, conditioned, and distributed without interruption for the mission lifetime. A power failure is a mission failure.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Power System Architecture
+
+```
+Solar Panels
+     │
+     ▼
+Solar Array Regulator (SAR)
+     │              │
+     ▼              ▼
+Battery          Main Bus
+Charge           Distribution
+Controller            │
+     │          ┌─────┴─────┐
+     ▼          ▼           ▼
+  Battery   5V Rail     3.3V Rail
+  Pack      (from       (from
+             DCDC)       DCDC)
+                    │
+               Load Switches
+               (per subsystem)
+```
+
+---
+
+## Energy Sources
+
+### Solar Panels
+
+- Most spacecraft use triple-junction GaAs (gallium arsenide) cells for highest efficiency (~29%)
+- Silicon cells used on CubeSats (efficiency ~18–22%, much cheaper)
+- Power output degrades ~2–5% per year due to radiation
+- Eclipse periods (spacecraft in Earth's shadow) require stored energy
+
+### Radioisotope Thermoelectric Generators (RTGs)
+
+- Used for deep space missions beyond Mars (insufficient sunlight)
+- Plutonium-238 decay → thermoelectric conversion → ~5–10% efficiency
+- Cassini: 870W BOL. New Horizons: 245W at launch
+- No solar or battery dependency
+
+---
+
+## Energy Storage
+
+### Li-Ion Batteries
+
+Standard for most spacecraft:
+
+| Parameter | Typical Range |
+|-----------|--------------|
+| Specific energy | 150–265 Wh/kg |
+| Cycle life | 500–10,000 cycles depending on DoD |
+| Operating temp | -20°C to +60°C |
+| Depth of Discharge (DoD) | 20–30% for LEO longevity |
+
+### Li-Polymer
+
+- Slightly lower energy density than Li-Ion
+- Flexible form factor — useful in volume-constrained CubeSats
+
+---
+
+## Eclipse and Power Budget
+
+In LEO, eclipse periods last ~35 minutes per ~95-minute orbit. The power budget must account for:
+
+```
+Average Power = Solar Power × (sunlit fraction) − Battery Charge Power
+Battery Capacity = Peak Load × Eclipse Duration × margin
+
+Example (3U CubeSat):
+  Solar input:    2.5W average
+  Sunlit load:    2.2W
+  Eclipse load:   1.8W
+  Eclipse time:   35 min
+  Battery needed: 1.8W × (35/60)h × 1.2 margin ≈ 1.26 Wh
+```
+
+---
+
+## Power Distribution
+
+### Load Switches
+
+Individual subsystems are powered through software-controllable load switches (typically FETs with current sensing):
+
+```c
+typedef enum {
+    LOAD_OBC       = 0,
+    LOAD_COMMS     = 1,
+    LOAD_ADCS      = 2,
+    LOAD_PAYLOAD   = 3,
+    LOAD_HEATERS   = 4,
+    LOAD_COUNT
+} LoadId_t;
+
+void eps_set_load(LoadId_t id, bool enable) {
+    gpio_write(load_switch_pins[id], enable ? GPIO_HIGH : GPIO_LOW);
+    load_state[id] = enable;
+    tlm_update_power_state();
+}
+```
+
+### Power Budget Management
+
+See [Power Budget Manager](../synthesis/power-budget-manager) for a software implementation that tracks real-time consumption and enforces limits.
+
+---
+
+## Fault Conditions
+
+| Fault | Detection | Response |
+|-------|-----------|----------|
+| Battery undervoltage | V < 6.8V | Shed non-essential loads |
+| Battery critical | V < 6.2V | Enter survival mode |
+| Overcurrent | Current sensor | Open load switch |
+| Solar array open | Zero current in sun | Flag, use backup string |
+| Short circuit | Rapid voltage drop | Isolate load |
+
+---
+
+## Battery State of Charge Estimation
+
+SoC cannot be measured directly. Common methods:
+
+- **Coulomb counting**: integrate charge in/out (drifts over time)
+- **OCV (Open Circuit Voltage)**: accurate but requires rest period
+- **Kalman filter fusion**: combine both for accurate real-time SoC
+
+```c
+// Simplified coulomb counter
+float soc_estimate(float soc_prev, float current_ma, float dt_s) {
+    float capacity_mah = BATTERY_CAPACITY_MAH;
+    float delta_mah = current_ma * (dt_s / 3600.0f);
+    return soc_prev - (delta_mah / capacity_mah);
+}
+```
+
+---
+
+## Key References
+
+- [Space Hardware Overview](./overview)
+- [Power Budget Manager](../synthesis/power-budget-manager)
+- [Health & Safety Monitoring](../flight-software/health-safety)
+- [CubeSat Hardware](./cubesat-hardware)
+- [Thermal Vacuum](./thermal-vacuum)

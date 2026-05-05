@@ -1,12 +1,147 @@
 ---
 id: posix-psp
-title: POSIX PSP
+title: POSIX & PSP
 sidebar_label: POSIX PSP
 sidebar_position: 10
 ---
 
-# POSIX PSP
+# POSIX & Platform Support Package
 
-*Full content coming soon. This page is part of the RTOS section.*
+The Platform Support Package (PSP) is the layer in NASA's cFS framework that abstracts hardware-specific and OS-specific behavior. It sits between the OSAL (OS Abstraction Layer) and the actual hardware/BSP, providing a portable interface for things that OSAL doesn't cover: startup, memory maps, timers, and processor-specific services.
 
-See the [overview](./overview) for what this page covers.
+Understanding PSP is essential for porting cFS to a new processor or integrating it with a new RTOS.
+
+---
+
+## The cFS Portability Stack
+
+```
+cFS Applications          ← mission-unique software
+        ↓
+cFE Services              ← Software Bus, Events, Time, Tables
+        ↓
+OSAL                      ← tasks, queues, semaphores, files (portable)
+        ↓
+PSP                       ← startup, memory map, timers, exceptions (board-specific)
+        ↓
+RTOS BSP                  ← RTEMS/VxWorks/FreeRTOS + board support
+        ↓
+Hardware
+```
+
+---
+
+## OSAL — The Portable Interface
+
+OSAL provides ~60 functions covering tasks, semaphores, queues, timers, file I/O, and sockets. All use `osal_id_t` handles and return `OS_SUCCESS` or error codes.
+
+```c
+#include "osapi.h"
+
+// Task
+osal_id_t task_id;
+OS_TaskCreate(&task_id, "ADCS", adcs_task, stack_ptr, stack_size, 50, 0);
+
+// Queue
+osal_id_t queue_id;
+OS_QueueCreate(&queue_id, "SENSOR_Q", 16, sizeof(sensor_t), 0);
+OS_QueuePut(queue_id, &sensor_data, sizeof(sensor_t), OS_CHECK);
+OS_QueueGet(queue_id, &rx_data, sizeof(sensor_t), &actual_size, OS_PEND);
+
+// Binary semaphore
+osal_id_t sem_id;
+OS_BinSemCreate(&sem_id, "DATA_RDY", 0, 0);
+OS_BinSemGive(sem_id);
+OS_BinSemTake(sem_id);   // blocks until given
+
+// Mutex
+osal_id_t mutex_id;
+OS_MutSemCreate(&mutex_id, "I2C_BUS", 0);
+OS_MutSemTake(mutex_id);
+// critical section
+OS_MutSemGive(mutex_id);
+
+// Timer
+osal_id_t timer_id;
+OS_TimerCreate(&timer_id, "HK_TIMER", &clock_accuracy, hk_timer_callback);
+OS_TimerSet(timer_id, 1000000, 1000000);   // start 1s, repeat 1s (microseconds)
+```
+
+---
+
+## PSP Functions
+
+The PSP implements board-specific behavior that OSAL doesn't cover:
+
+```c
+// PSP function signatures (you implement these for your target)
+
+// Called by cFE startup before any apps are loaded
+void CFE_PSP_Main(void);
+
+// Get/set processor reset type
+uint32 CFE_PSP_GetResetType(uint32* reset_sub_type);
+
+// Restart — warm or power-on reset
+void CFE_PSP_Restart(uint32 reset_type);
+
+// Memory read/write with ECC checking
+int32 CFE_PSP_MemRead32(cpuaddr addr, uint32* data);
+int32 CFE_PSP_MemWrite32(cpuaddr addr, uint32 data);
+
+// Exception handling — called on hard fault, bus error, etc.
+void CFE_PSP_AttachExceptions(void);
+void CFE_PSP_SetDefaultExceptionEnvironment(void);
+
+// Time — spacecraft mission elapsed time
+void CFE_PSP_GetTime(OS_time_t* local_time);
+int32 CFE_PSP_SetTime(int32 seconds, uint32 subseconds);
+```
+
+---
+
+## Running cFS on Linux (Development)
+
+The cFS Linux PSP allows running flight apps on a desktop workstation:
+
+```bash
+git clone https://github.com/nasa/cFS.git --recurse-submodules
+cd cFS
+cp cfe/cmake/Makefile.sample Makefile
+cp -r cfe/cmake/sample_defs sample_defs
+make prep    # configure for native Linux build
+make
+cd build/exe/cpu1
+./core-cpu1  # runs cFS executive, loads apps
+```
+
+The same app binaries that run in this simulation are compiled for RTEMS/LEON3 by swapping the PSP and OSAL implementations. Application code is unchanged.
+
+---
+
+## Writing a Portable Driver
+
+```c
+// BAD — direct hardware access in application layer
+void read_temperature(float* out) {
+    while (!(ADC1->SR & ADC_SR_EOC));
+    *out = ADC1->DR * TEMP_SCALE;
+}
+
+// GOOD — abstracts hardware behind OS-level interface
+// On target: opens /dev/adc0 via RTEMS driver
+// On Linux: opens a simulated file or returns mock data
+int32 read_temperature(float* out) {
+    int fd = OS_open("/dev/temp_sensor", OS_READ_ONLY, 0);
+    if (fd < 0) return OS_ERROR;
+
+    raw_temp_t raw;
+    OS_read(fd, &raw, sizeof(raw));
+    OS_close(fd);
+
+    *out = raw.value * TEMP_SCALE + TEMP_OFFSET;
+    return OS_SUCCESS;
+}
+```
+
+This pattern makes the app testable on Linux without any hardware and portable to any platform that provides an OSAL-compatible driver.

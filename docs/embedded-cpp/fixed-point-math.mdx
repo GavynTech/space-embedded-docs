@@ -7,6 +7,113 @@ sidebar_position: 7
 
 # Fixed-Point Math
 
-*Full content coming soon. This page is part of the Embedded C/C++ section.*
+Floating-point arithmetic is convenient but problematic in two scenarios: hardware without an FPU (many space microcontrollers), and code where non-deterministic rounding or variable latency is unacceptable. Fixed-point math solves both.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## The Q Format
+
+Fixed-point numbers are integers where a fixed number of bits represent the fractional part. The Q notation `Qm.n` means m integer bits and n fractional bits.
+
+| Format | Range | Resolution | Use Case |
+|---|---|---|---|
+| Q1.15 (16-bit) | −1.0 to +0.9999 | 3.05×10⁻⁵ | Unit vectors, trig tables |
+| Q16.16 (32-bit) | −32768 to +32767.9999 | 1.5×10⁻⁵ | General purpose |
+| Q1.31 (32-bit) | −1.0 to +0.9999 | 4.7×10⁻¹⁰ | High-precision unit values |
+| Q8.24 (32-bit) | −128 to +127.9999 | 6×10⁻⁸ | Sensor scaling |
+
+**Converting float to Q16.16:**
+```c
+// Scale by 2^16 = 65536
+int32_t q = (int32_t)(float_val * 65536.0f);
+
+// Convert back
+float f = (float)q / 65536.0f;
+```
+
+---
+
+## Basic Operations
+
+```c
+// Q16.16 fixed-point (scale factor K = 2^16 = 65536)
+typedef int32_t q16_t;
+#define Q16_K    65536
+#define Q16(x)   ((q16_t)((x) * Q16_K))
+
+// Addition and subtraction — same as integer (scale factors cancel)
+q16_t add(q16_t a, q16_t b) { return a + b; }
+q16_t sub(q16_t a, q16_t b) { return a - b; }
+
+// Multiplication — result has scale K^2, must divide by K
+q16_t mul(q16_t a, q16_t b) {
+    return (q16_t)(((int64_t)a * b) >> 16);
+    // Using 64-bit intermediate prevents overflow
+}
+
+// Division
+q16_t divq(q16_t a, q16_t b) {
+    return (q16_t)(((int64_t)a << 16) / b);
+}
+```
+
+---
+
+## Trig Without FPU
+
+Pre-computed lookup tables replace `sin()`/`cos()` calls:
+
+```c
+// 256-entry Q1.15 sine table (covers 0 to 2π)
+static const int16_t sin_table[256] = {
+    0, 804, 1608, 2410, 3212, 4011, 4808, 5602,  // ... generated at build time
+    // sin(i * 2*PI / 256) * 32767
+};
+
+// sin(angle) where angle is 0–255 (maps to 0–2π)
+int16_t fast_sin(uint8_t angle) {
+    return sin_table[angle];
+}
+
+// Cosine: sin(angle + 64) = cos(angle) (quarter-period offset)
+int16_t fast_cos(uint8_t angle) {
+    return sin_table[(uint8_t)(angle + 64)];
+}
+```
+
+For spacecraft ADCS on a bare Cortex-M0 without FPU, this approach reduces trig computation from ~100 cycles (software float sin) to ~3 cycles (table lookup).
+
+---
+
+## Saturation Arithmetic
+
+Overflow in fixed-point is a real concern — unlike float, it wraps. Use saturating operations for safety-critical code:
+
+```c
+// Saturating add — clamps instead of wrapping
+q16_t sat_add(q16_t a, q16_t b) {
+    int64_t result = (int64_t)a + b;
+    if (result >  0x7FFFFFFF) return  0x7FFFFFFF;
+    if (result < -0x80000000) return -0x80000000; // cast for clarity
+    return (q16_t)result;
+}
+
+// ARM Cortex-M has hardware saturating instructions
+// __QADD(), __QSUB(), __QDADD() — use via CMSIS intrinsics
+q16_t sat_add_hw(q16_t a, q16_t b) {
+    return __QADD(a, b);  // single cycle, hardware saturate
+}
+```
+
+---
+
+## When to Use Fixed-Point
+
+| Use fixed-point | Use float |
+|---|---|
+| No FPU on target | FPU available (Cortex-M4F, M7) |
+| MISRA-C strict compliance | Algorithm is complex (EKF, matrix ops) |
+| Deterministic timing required | Precision requirements exceed Q32 |
+| Simple scaling, control loops | Off-the-shelf math libraries needed |
+
+Modern spacecraft processors (ARM Cortex-R5 with FPU, LEON3-FT with FPU option) often have hardware floating-point. The tradeoff has shifted — fixed-point is now primarily for the most resource-constrained subsystem controllers, not the main flight computer.

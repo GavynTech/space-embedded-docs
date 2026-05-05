@@ -7,6 +7,158 @@ sidebar_position: 6
 
 # ADCS Software
 
-*Full content coming soon. This page is part of the Orbital Physics section.*
+Attitude Determination and Control System (ADCS) software closes the loop between sensors and actuators to keep the spacecraft pointed correctly. It runs on a fixed cycle, typically 1–10 Hz, and must produce deterministic outputs within tight deadline constraints.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## ADCS Software Architecture
+
+```
+Sensor Drivers
+     │
+     ▼
+Sensor Preprocessing (calibration, validation)
+     │
+     ▼
+Attitude Determination (Kalman filter, TRIAD, quest)
+     │
+     ▼
+State Machine (DETUMBLE → ACQUISITION → COARSE → FINE → SCIENCE)
+     │
+     ▼
+Control Law (PD, PID, sliding mode, LQR)
+     │
+     ▼
+Actuator Commands (reaction wheels, magnetorquers, thrusters)
+     │
+     ▼
+Actuator Drivers
+```
+
+---
+
+## Attitude Determination Methods
+
+### TRIAD Algorithm
+
+Given two reference vectors (known directions in inertial frame) and their body-frame measurements:
+
+```cpp
+// Example: Sun vector + magnetic field vector
+Eigen::Matrix3d triad(const Eigen::Vector3d &s_body,
+                      const Eigen::Vector3d &m_body,
+                      const Eigen::Vector3d &s_inertial,
+                      const Eigen::Vector3d &m_inertial) {
+    // Build body and inertial triads
+    Eigen::Vector3d r1_b = s_body.normalized();
+    Eigen::Vector3d r2_b = (s_body.cross(m_body)).normalized();
+    Eigen::Vector3d r3_b = r1_b.cross(r2_b);
+
+    Eigen::Vector3d r1_i = s_inertial.normalized();
+    Eigen::Vector3d r2_i = (s_inertial.cross(m_inertial)).normalized();
+    Eigen::Vector3d r3_i = r1_i.cross(r2_i);
+
+    Eigen::Matrix3d T_body, T_inertial;
+    T_body    << r1_b, r2_b, r3_b;
+    T_inertial << r1_i, r2_i, r3_i;
+
+    return T_body * T_inertial.transpose(); // R_body_to_inertial
+}
+```
+
+TRIAD is deterministic and fast, but requires exactly two clean vector measurements.
+
+### Kalman-Based Estimation
+
+See [Kalman Filter](./kalman-filter) for the MEKF used in fine pointing modes.
+
+---
+
+## Control Modes
+
+| Mode | Trigger | Sensors Used | Actuators | Accuracy |
+|------|---------|-------------|-----------|----------|
+| DETUMBLE | Launch separation, reset | Magnetometer, gyro | Magnetorquers | None (rate reduction) |
+| ACQUISITION | After detumble | Sun sensor, magnetometer | Magnetorquers + wheels | ±10° |
+| COARSE | After acquisition | Sun sensor, gyro | Wheels | ±2° |
+| FINE | Payload operation | Star tracker, gyro | Wheels | ±0.05° |
+| SAFE | Fault detected | Sun sensor only | Magnetorquers | Sun-pointing |
+
+---
+
+## B-dot Detumbling Controller
+
+On separation from the launch vehicle, the spacecraft tumbles. B-dot damps rates using magnetorquers:
+
+```cpp
+// B-dot controller: command torque opposing rate of change of B field
+Eigen::Vector3d bdot_control(const Eigen::Vector3d &B_body,
+                              const Eigen::Vector3d &B_body_prev,
+                              double dt) {
+    Eigen::Vector3d Bdot = (B_body - B_body_prev) / dt;
+    return -K_BDOT * Bdot; // Magnetic dipole command [A·m²]
+}
+```
+
+Detumble complete when angular rate < threshold (e.g., 0.5°/s).
+
+---
+
+## PD Attitude Controller
+
+For reaction wheel control in pointing mode:
+
+```cpp
+// Attitude error as quaternion error
+Eigen::Quaterniond q_err = q_target.inverse() * q_current;
+// Small-angle attitude error vector
+Eigen::Vector3d att_err = 2.0 * q_err.vec();
+
+// Angular rate error
+Eigen::Vector3d rate_err = omega_target - omega_measured;
+
+// PD control law
+Eigen::Vector3d torque_cmd = Kp * att_err + Kd * rate_err;
+```
+
+Gains Kp and Kd are tuned to balance settling time, overshoot, and actuator saturation.
+
+---
+
+## Wheel Desaturation
+
+Reaction wheels accumulate angular momentum from external disturbances. When they approach saturation, magnetorquers dump the momentum:
+
+```cpp
+void desaturate_wheels(const Eigen::Vector3d &h_wheels,  // total wheel momentum
+                        const Eigen::Vector3d &B_body) {   // magnetic field
+    // Cross-product law: torque perpendicular to B
+    Eigen::Vector3d dipole_cmd = -K_DESAT * B_body.cross(h_wheels);
+    magnetorquer_set_dipole(dipole_cmd);
+}
+```
+
+---
+
+## Timing and Scheduling
+
+ADCS runs on a fixed-rate task. Typical scheduling:
+
+| Sub-task | Rate | Deadline |
+|---------|------|----------|
+| Sensor read | 10 Hz | < 5 ms |
+| Kalman filter predict | 10 Hz | < 5 ms |
+| Kalman filter update | 1 Hz (star tracker) | < 20 ms |
+| Control law | 10 Hz | < 2 ms |
+| Actuator command | 10 Hz | < 1 ms |
+| Telemetry output | 1 Hz | < 5 ms |
+
+---
+
+## Key References
+
+- [Attitude Representation](./attitude-representation)
+- [Kalman Filter](./kalman-filter)
+- [Coordinate Frames](./coordinate-frames)
+- [Attitude Control Loop](../synthesis/attitude-control-loop)
+- [Sensors & Actuators](../space-hardware/sensors-actuators)

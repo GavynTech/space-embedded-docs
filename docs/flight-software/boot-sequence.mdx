@@ -7,6 +7,140 @@ sidebar_position: 8
 
 # Boot Sequence
 
-*Full content coming soon. This page is part of the Flight Software section.*
+The boot sequence is the ordered set of operations a spacecraft computer performs from power-on to mission-ready state. Every microsecond matters: hardware must be verified, software integrity confirmed, and the vehicle brought up safely before any mission-critical function runs.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Phases of Boot
+
+```
+Power On → ROM Bootloader → Stage 1 Loader → Stage 2 Loader → OS Init → App Init → Mission Ready
+```
+
+### 1. ROM Bootloader
+
+Executes directly from read-only memory. Cannot be patched in flight. Responsibilities:
+
+- Initialize CPU registers and stack pointer
+- Configure memory controller (SDRAM timing, ECC init)
+- Verify Stage 1 loader via CRC or digital signature
+- Jump to Stage 1 if check passes; halt or safe-mode if it fails
+
+### 2. Stage 1 Loader (Primary Bootloader)
+
+Runs from SRAM or NOR flash. Responsible for:
+
+- UART/SpaceWire console init for ground debugging
+- Loading the Stage 2 image from redundant storage
+- Selecting primary vs. backup image based on boot counter and health flags
+
+### 3. Stage 2 Loader (Secondary Bootloader)
+
+May run from SDRAM. Handles:
+
+- Full memory map setup and MPU/MMU configuration
+- Decompressing or copying the OS image
+- Verifying OS image before handing control to kernel
+
+### 4. OS Initialization
+
+The RTOS or bare-metal scheduler comes up:
+
+- Timer and interrupt controller initialized
+- Task scheduler started (idle task first)
+- Device driver initialization in priority order
+- Watchdog armed
+
+### 5. Application Initialization
+
+Flight software applications start in dependency order:
+
+- Telemetry downlink (verify comms before anything else)
+- Housekeeping and health monitor
+- Payload and mission apps last
+
+---
+
+## Boot Counter and Watchdog Reset
+
+```c
+// Read and increment boot counter from NVRAM
+uint32_t boot_count = nvram_read_u32(BOOT_COUNT_ADDR);
+boot_count++;
+nvram_write_u32(BOOT_COUNT_ADDR, boot_count);
+
+// Select image based on recent failure count
+if (nvram_read_u32(FAIL_COUNT_ADDR) > MAX_BOOT_FAILURES) {
+    load_image(BACKUP_IMAGE_BASE);
+} else {
+    load_image(PRIMARY_IMAGE_BASE);
+}
+```
+
+A watchdog reset increments the fail counter. If primary keeps failing, the system falls back to the backup image — a pattern called **autonomous reconfiguration**.
+
+---
+
+## Image Integrity Verification
+
+| Method | Cost | Use Case |
+|--------|------|----------|
+| CRC-32 | Very fast | Boot-time check of ROM/flash |
+| SHA-256 | Moderate | Verifying uplinked patches |
+| RSA signature | Slow | High-assurance mission software |
+| Reed-Solomon | Continuous | Storage media with SEU exposure |
+
+---
+
+## Boot Time Budget
+
+| Phase | Typical Duration |
+|-------|-----------------|
+| ROM bootloader | < 10 ms |
+| Stage 1 loader | 50–200 ms |
+| Stage 2 loader | 100–500 ms |
+| OS init | 500 ms – 2 s |
+| App init | 1–10 s |
+| Mission ready | **2–15 s total** |
+
+Harsh radiation events can corrupt DRAM requiring scrub before use — this can add seconds.
+
+---
+
+## Safe Boot Mode
+
+If repeated watchdog resets occur, enter **safe mode** at boot:
+
+- Minimal software stack (comms + health only)
+- No payload or attitude control
+- Awaiting ground command to re-enable full ops
+- All non-essential power rails off
+
+See [Safe Mode FSM](../synthesis/safe-mode-fsm) for implementation details.
+
+---
+
+## Boot Logging
+
+Every boot phase should write a record to NVRAM before proceeding:
+
+```c
+typedef struct {
+    uint32_t boot_count;
+    uint32_t reset_cause;    // WDT, POR, SW_RESET, etc.
+    uint32_t image_selected; // PRIMARY or BACKUP
+    uint32_t timestamp_ms;
+    uint32_t phase_reached;  // Last successfully completed phase
+} BootRecord_t;
+```
+
+This log is the first thing ground operators read after an anomaly.
+
+---
+
+## Key References
+
+- [Flight Software Overview](./overview)
+- [NASA cFS Framework](./cfs-framework)
+- [Fault Management](./fault-management)
+- [Safe Mode FSM](../synthesis/safe-mode-fsm)

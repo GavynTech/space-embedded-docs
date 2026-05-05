@@ -7,6 +7,138 @@ sidebar_position: 10
 
 # Sensors & Actuators
 
-*Full content coming soon. This page is part of the Space Hardware section.*
+A spacecraft's sensors measure its environment and state; its actuators change that state. Together they close the control loop that keeps the vehicle pointed, powered, and operating correctly.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Attitude Sensors
+
+### Sun Sensors
+
+Determine the direction to the Sun. Essential for initial attitude acquisition and power generation:
+
+| Type | Accuracy | Notes |
+|------|----------|-------|
+| Coarse (analog) | ±10–20° | Simple photodiodes, always-on |
+| Fine (digital) | ±0.1–1° | Active pixel sensor, higher power |
+
+### Magnetometer
+
+Measures Earth's magnetic field vector. Combined with a magnetic field model (IGRF) to determine attitude:
+
+- 3-axis fluxgate or AMR magnetometer
+- Accuracy: 10–100 nT typically
+- Low power, always-on sensor
+
+### Star Tracker
+
+Photographs the star field, matches against a catalog, outputs precise inertial attitude:
+
+- Accuracy: 1–30 arcseconds
+- Requires ~0.5–5W, needs clear FOV
+- Cannot operate near bright objects (Sun, Moon, Earth limb)
+- Gold standard for fine pointing
+
+### IMU (Gyroscopes)
+
+Measures angular rate. Integrated to propagate attitude between sensor updates:
+
+| Type | Drift Rate | Notes |
+|------|-----------|-------|
+| MEMS gyro | 1–100°/hr | Low cost, higher noise |
+| Fiber optic gyro | 0.001–0.1°/hr | High accuracy, heavy |
+| Hemispherical resonator gyro | 0.001°/hr | Heritage on deep space missions |
+
+### GPS / GNSS Receiver
+
+Provides position, velocity, and precise time in LEO:
+
+- Position: ±5–50 m
+- Velocity: ±0.1 m/s
+- Time: ±50 ns (1-PPS output)
+
+---
+
+## Attitude Actuators
+
+### Reaction Wheels
+
+Store angular momentum by spinning. Torque the spacecraft by changing spin rate:
+
+```c
+// Wheel torque command
+// T_wheel = -T_desired (reaction)
+void rw_set_torque_nm(uint8_t axis, float torque_nm) {
+    int16_t cmd = (int16_t)(torque_nm / TORQUE_SCALE);
+    can_send(RW_CAN_ID + axis, &cmd, sizeof(cmd));
+}
+```
+
+- 3 wheels minimum (one per axis), 4 for redundancy
+- Must be periodically desaturated using magnetorquers
+
+### Magnetorquers
+
+Coils that interact with Earth's magnetic field to generate torque. Cannot command torque along the magnetic field vector:
+
+- Used for attitude acquisition, wheel desaturation
+- Very low power, no moving parts
+
+### Thrusters
+
+Cold gas, monoprop (hydrazine), biprop, or electric (ion, Hall effect):
+
+| Type | Isp | Thrust | Use |
+|------|-----|--------|-----|
+| Cold gas (N₂) | 50–70 s | mN | CubeSat attitude |
+| Monoprop (hydrazine) | 220 s | 0.5–22 N | Orbit correction |
+| Biprop (MMH/NTO) | 310 s | 5–500 N | Major burns |
+| Hall thruster (ion) | 1500–3000 s | 0.01–5 N | Low thrust, high ΔV |
+
+---
+
+## Environmental Sensors
+
+| Sensor | Measurement | Interface |
+|--------|-------------|-----------|
+| Thermistor | Temperature | Analog (ADC) |
+| Current sensor | Bus current | I2C / SPI |
+| Voltage sensor | Bus voltage | I2C / SPI |
+| Radiation monitor | Total ionizing dose | SPI / UART |
+| Pressure sensor | Propellant tank | Analog / I2C |
+
+---
+
+## Sensor Interfaces
+
+Most spacecraft sensors communicate over:
+
+| Interface | Speed | Notes |
+|-----------|-------|-------|
+| I2C | 100kbps – 1Mbps | Simple, multi-drop, short distance |
+| SPI | 1–50Mbps | Full duplex, single master |
+| UART/RS-422 | 9.6kbps – 10Mbps | Long cable runs |
+| CAN | 1Mbps | Fault-tolerant bus, ECSS-E-ST-50-15 |
+| SpaceWire | 2–400Mbps | LVDS, point-to-point, space standard |
+| MIL-STD-1553 | 1Mbps | Avionics heritage, highly reliable |
+
+---
+
+## Redundancy for Critical Sensors
+
+All mission-critical sensors should be redundant:
+
+- Dual IMUs with cross-check voting
+- Dual sun sensors per axis
+- Primary + backup GPS receiver
+- Sensor failure detected by sanity checks (physics bounds), not just comms errors
+
+---
+
+## Key References
+
+- [Space Hardware Overview](./overview)
+- [ADCS Software](../orbital-physics/adcs-software)
+- [Attitude Control Loop](../synthesis/attitude-control-loop)
+- [Kalman Filter](../orbital-physics/kalman-filter)
+- [Attitude Representation](../orbital-physics/attitude-representation)

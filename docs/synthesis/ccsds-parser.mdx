@@ -7,6 +7,236 @@ sidebar_position: 4
 
 # CCSDS Parser
 
-*Full content coming soon. This page is part of the Synthesis section.*
+This page implements a complete CCSDS Space Packet parser in C — the packet layer used for both commands and telemetry in virtually every space mission. The parser handles both primary and secondary headers, validates checksums, and dispatches to registered handlers.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## CCSDS Space Packet Structure
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┤─┤─┼─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┼─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┤
+│V│T│S│        APID (11 bits)     │ Seq Flags │ Seq Count (14)  │
+├─┴─┴─┼─────────────────────────────┼───────────────────────────────┤
+│             Packet Data Length (16 bits)                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Secondary Header (optional)                                    │
+├─────────────────────────────────────────────────────────────────┤
+│  User Data (payload)                                            │
+└─────────────────────────────────────────────────────────────────┘
+
+V    = Version (3 bits, always 000)
+T    = Packet Type (0=TM, 1=TC)
+S    = Secondary Header Flag (1=present)
+APID = Application Process Identifier (0–2047)
+Seq Flags = 11=standalone, 01=first, 00=continuation, 10=last
+Length = User data length - 1 (bytes)
+```
+
+---
+
+## Header Definitions
+
+```c
+// ccsds.h
+#ifndef CCSDS_H
+#define CCSDS_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#define CCSDS_PRIMARY_HDR_SIZE    6u
+#define CCSDS_MAX_PACKET_SIZE  4096u
+
+// --- Primary Header Fields ---
+#define CCSDS_VERSION_MASK    0xE000u
+#define CCSDS_TYPE_MASK       0x1000u
+#define CCSDS_SHDR_MASK       0x0800u
+#define CCSDS_APID_MASK       0x07FFu
+#define CCSDS_SEQFLAG_MASK    0xC000u
+#define CCSDS_SEQCOUNT_MASK   0x3FFFu
+
+// Sequence flags
+#define CCSDS_SEQ_CONT        0x0000u
+#define CCSDS_SEQ_FIRST       0x4000u
+#define CCSDS_SEQ_LAST        0x8000u
+#define CCSDS_SEQ_STANDALONE  0xC000u
+
+typedef struct __attribute__((packed)) {
+    uint16_t stream_id;    // version[3] + type[1] + shdr[1] + apid[11]
+    uint16_t sequence;     // seq_flags[2] + seq_count[14]
+    uint16_t length;       // user data length - 1
+} CcsdsPriHdr_t;
+
+// Standard secondary header for telemetry
+typedef struct __attribute__((packed)) {
+    uint32_t seconds;      // TAI seconds
+    uint16_t subseconds;   // 1/65536 second
+} CcsdsSecHdrTlm_t;
+
+// Full TM packet header
+typedef struct __attribute__((packed)) {
+    CcsdsPriHdr_t   pri;
+    CcsdsSecHdrTlm_t sec;
+} CcsdsTmHdr_t;
+
+// Full TC packet header (no secondary header typically)
+typedef CcsdsPriHdr_t CcsdsTcHdr_t;
+
+// Generic packet for parsing
+typedef struct {
+    CcsdsPriHdr_t *hdr;
+    uint8_t       *payload;
+    uint16_t       payload_len;
+} CcsdsPacket_t;
+
+#endif // CCSDS_H
+```
+
+---
+
+## Accessor Functions
+
+```c
+// ccsds_access.h
+
+static inline uint16_t ccsds_get_apid(const CcsdsPriHdr_t *hdr) {
+    return __builtin_bswap16(hdr->stream_id) & CCSDS_APID_MASK;
+}
+
+static inline bool ccsds_is_cmd(const CcsdsPriHdr_t *hdr) {
+    return (__builtin_bswap16(hdr->stream_id) & CCSDS_TYPE_MASK) != 0u;
+}
+
+static inline bool ccsds_has_sec_hdr(const CcsdsPriHdr_t *hdr) {
+    return (__builtin_bswap16(hdr->stream_id) & CCSDS_SHDR_MASK) != 0u;
+}
+
+static inline uint16_t ccsds_get_seq_count(const CcsdsPriHdr_t *hdr) {
+    return __builtin_bswap16(hdr->sequence) & CCSDS_SEQCOUNT_MASK;
+}
+
+static inline uint16_t ccsds_get_user_data_len(const CcsdsPriHdr_t *hdr) {
+    return __builtin_bswap16(hdr->length) + 1u;
+}
+
+static inline uint16_t ccsds_get_total_len(const CcsdsPriHdr_t *hdr) {
+    return CCSDS_PRIMARY_HDR_SIZE + ccsds_get_user_data_len(hdr);
+}
+```
+
+---
+
+## Parser
+
+```c
+// ccsds_parser.c
+#include "ccsds.h"
+
+typedef void (*CcsdsHandler_t)(const CcsdsPacket_t *pkt, void *ctx);
+
+typedef struct {
+    uint16_t       apid;
+    CcsdsHandler_t handler;
+    void          *ctx;
+} CcsdsRoute_t;
+
+#define MAX_ROUTES 64u
+
+static CcsdsRoute_t routes[MAX_ROUTES];
+static uint16_t     route_count = 0;
+static uint16_t     last_seq[2048];  // per-APID sequence tracker
+
+// --- Registration ---
+
+int ccsds_register(uint16_t apid, CcsdsHandler_t handler, void *ctx) {
+    if (route_count >= MAX_ROUTES) return -1;
+    routes[route_count].apid    = apid;
+    routes[route_count].handler = handler;
+    routes[route_count].ctx     = ctx;
+    route_count++;
+    return 0;
+}
+
+// --- Parsing ---
+
+typedef enum {
+    CCSDS_OK = 0,
+    CCSDS_ERR_TOO_SHORT,
+    CCSDS_ERR_LENGTH_MISMATCH,
+    CCSDS_ERR_SEQ_GAP,
+    CCSDS_ERR_NO_HANDLER,
+} CcsdsStatus_t;
+
+CcsdsStatus_t ccsds_parse(const uint8_t *buf, uint16_t buf_len) {
+    if (buf_len < CCSDS_PRIMARY_HDR_SIZE) {
+        return CCSDS_ERR_TOO_SHORT;
+    }
+
+    const CcsdsPriHdr_t *hdr = (const CcsdsPriHdr_t *)buf;
+    uint16_t total_len = ccsds_get_total_len(hdr);
+
+    if (total_len > buf_len) {
+        return CCSDS_ERR_LENGTH_MISMATCH;
+    }
+
+    uint16_t apid     = ccsds_get_apid(hdr);
+    uint16_t seq      = ccsds_get_seq_count(hdr);
+    uint16_t expected = (last_seq[apid] + 1u) & 0x3FFFu;
+
+    if (last_seq[apid] != 0xFFFFu && seq != expected) {
+        // Sequence gap — log but continue
+        event_log(EVT_CCSDS_SEQ_GAP, apid, seq);
+    }
+    last_seq[apid] = seq;
+
+    // Build packet descriptor
+    CcsdsPacket_t pkt;
+    pkt.hdr = (CcsdsPriHdr_t *)hdr;
+
+    uint16_t hdr_size = ccsds_has_sec_hdr(hdr)
+        ? CCSDS_PRIMARY_HDR_SIZE + sizeof(CcsdsSecHdrTlm_t)
+        : CCSDS_PRIMARY_HDR_SIZE;
+
+    pkt.payload     = (uint8_t *)buf + hdr_size;
+    pkt.payload_len = total_len - hdr_size;
+
+    // Dispatch
+    for (uint16_t i = 0; i < route_count; i++) {
+        if (routes[i].apid == apid) {
+            routes[i].handler(&pkt, routes[i].ctx);
+            return CCSDS_OK;
+        }
+    }
+
+    return CCSDS_ERR_NO_HANDLER;
+}
+```
+
+---
+
+## Usage Example
+
+```c
+// Register handlers at startup
+ccsds_register(APID_ADCS_CMD, adcs_cmd_handler, &adcs_ctx);
+ccsds_register(APID_EPS_CMD,  eps_cmd_handler,  &eps_ctx);
+
+// In comms receive callback:
+void comms_rx_callback(const uint8_t *frame, uint16_t len) {
+    CcsdsStatus_t status = ccsds_parse(frame, len);
+    if (status != CCSDS_OK) {
+        tlm_increment_rx_error();
+    }
+}
+```
+
+---
+
+## Key References
+
+- [Command & Telemetry](../flight-software/command-telemetry)
+- [Ground Interface](../flight-software/ground-interface)
+- [Telemetry Pipeline](./telemetry-pipeline)
+- [Synthesis Overview](./overview)

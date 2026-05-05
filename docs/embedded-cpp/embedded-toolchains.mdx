@@ -7,6 +7,174 @@ sidebar_position: 9
 
 # Embedded Toolchains
 
-*Full content coming soon. This page is part of the Embedded C/C++ section.*
+The toolchain is the chain of tools that turns your C/C++ source into a binary that runs on target hardware: compiler, assembler, linker, and a collection of utilities for inspecting the output.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## ARM Bare-Metal Toolchain
+
+For ARM Cortex-M/R (the most common spacecraft microcontroller family):
+
+```
+arm-none-eabi-gcc      — C compiler
+arm-none-eabi-g++      — C++ compiler
+arm-none-eabi-as       — assembler
+arm-none-eabi-ld       — linker (usually invoked via gcc)
+arm-none-eabi-objcopy  — convert ELF to binary/hex
+arm-none-eabi-objdump  — disassemble, inspect sections
+arm-none-eabi-size     — report code/data size
+arm-none-eabi-nm       — list symbols
+arm-none-eabi-gdb      — debugger
+```
+
+`none` = no OS, `eabi` = Embedded Application Binary Interface (calling convention and ABI standard).
+
+**Install:**
+```bash
+# Ubuntu/Debian
+sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi
+
+# Or download ARM's official release from developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain
+```
+
+---
+
+## Key Compiler Flags
+
+```makefile
+CPU_FLAGS = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
+
+CFLAGS = \
+    $(CPU_FLAGS)          \
+    -O2                   \   # optimize (use -O0 for debug)
+    -g3                   \   # debug info
+    -fno-exceptions       \
+    -fno-rtti             \
+    -ffunction-sections   \   # put each function in its own section (enables dead-code elimination)
+    -fdata-sections       \   # same for data
+    -Wall -Wextra         \
+    -Werror               \
+    -std=c11                  # or c++17 for C++
+```
+
+**Linker flags:**
+```makefile
+LDFLAGS = \
+    -T linker.ld           \  # linker script
+    -Wl,--gc-sections      \  # remove unused sections (dead code elimination)
+    -Wl,-Map=output.map    \  # generate memory map file
+    -nostartfiles             # don't link default startup code (we provide our own)
+```
+
+---
+
+## The Output Files
+
+```bash
+# Compile and link to ELF
+arm-none-eabi-gcc $(CFLAGS) $(LDFLAGS) src/*.c -o firmware.elf
+
+# ELF → flat binary (for flashing)
+arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
+
+# ELF → Intel HEX (for some programmers)
+arm-none-eabi-objcopy -O ihex firmware.elf firmware.hex
+
+# Check section sizes
+arm-none-eabi-size firmware.elf
+#    text    data     bss     dec     hex filename
+#   48320    1024    8192   57536    e0c0 firmware.elf
+# text = code + rodata (FLASH)
+# data = initialized globals (FLASH + RAM)
+# bss  = zero-initialized globals (RAM only)
+```
+
+---
+
+## Inspecting the Binary
+
+```bash
+# Disassemble to verify compiler output
+arm-none-eabi-objdump -d firmware.elf | head -100
+
+# Check memory map — where is each symbol?
+arm-none-eabi-nm --size-sort firmware.elf | tail -20
+
+# Read the full map file
+cat output.map | grep "\.text\."
+
+# Check stack usage (requires -fstack-usage build flag)
+cat src/adcs.su
+# adcs.c:47:6:run_control_loop    312 static
+# adcs.c:89:6:read_sensors         64 static
+```
+
+---
+
+## LEON3 / SPARC (NASA/ESA Missions)
+
+For LEON3-FT (used on many ESA missions and some NASA):
+
+```
+sparc-elf-gcc     — bare metal SPARC
+sparc-rtems-gcc   — SPARC with RTEMS RTOS support
+```
+
+RTEMS provides a full BSP (Board Support Package) for most LEON3 targets. Build with:
+
+```bash
+./waf configure --rtems=/opt/rtems/6 --rtems-bsp=sparc/leon3
+./waf
+```
+
+---
+
+## CMake Build System
+
+For larger projects, CMake is the standard:
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(flight-sw C CXX)
+
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR arm)
+set(CMAKE_C_COMPILER arm-none-eabi-gcc)
+set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
+
+set(CPU_FLAGS "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard")
+set(CMAKE_C_FLAGS   "${CPU_FLAGS} -O2 -fno-exceptions -ffunction-sections -Wall -Werror")
+set(CMAKE_EXE_LINKER_FLAGS "-T ${CMAKE_SOURCE_DIR}/linker.ld -Wl,--gc-sections -Wl,-Map=output.map -nostartfiles")
+
+add_executable(firmware.elf
+    src/startup.c
+    src/main.c
+    src/adcs.c
+    src/uart.c
+)
+
+# Post-build: generate .bin and print size
+add_custom_command(TARGET firmware.elf POST_BUILD
+    COMMAND arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
+    COMMAND arm-none-eabi-size firmware.elf
+)
+```
+
+---
+
+## Cross-Compilation vs. Native
+
+Most flight software is cross-compiled: built on an x86 Linux workstation, runs on ARM/SPARC hardware.
+
+**NASA cFS** supports a native build mode — the same application code compiles and runs on Linux for testing. The PSP (Platform Support Package) abstracts the difference. This is one of cFS's most valuable features: you can run and test flight apps on your laptop without any hardware.
+
+```bash
+# Build for RTEMS/LEON3 (target)
+cmake -DCMAKE_TOOLCHAIN_FILE=sparc-rtems.cmake ..
+make
+
+# Build for Linux (desktop test)
+cmake ..
+make
+./core-cpu1   # runs the cFS executive on Linux
+```

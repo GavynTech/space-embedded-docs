@@ -7,6 +7,151 @@ sidebar_position: 2
 
 # Keplerian Orbits
 
-*Full content coming soon. This page is part of the Orbital Physics section.*
+A Keplerian orbit is the idealized two-body orbit described by Kepler's laws. It assumes the spacecraft is a point mass influenced only by a spherically symmetric central body. In practice, perturbations break this ideal, but Keplerian mechanics remains the foundation everything builds on.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Kepler's Laws
+
+1. **Ellipses**: The orbit is an ellipse with the central body at one focus
+2. **Equal areas**: The radius vector sweeps equal areas in equal times (conserves angular momentum)
+3. **Period law**: T² ∝ a³ — the orbital period depends only on semi-major axis
+
+---
+
+## Classical Orbital Elements (COEs)
+
+Six parameters fully describe a Keplerian orbit at a given epoch:
+
+| Element | Symbol | Description |
+|---------|--------|-------------|
+| Semi-major axis | a | Size of the orbit |
+| Eccentricity | e | Shape (0 = circle, 1 = parabola) |
+| Inclination | i | Tilt relative to equator |
+| Right Ascension of Ascending Node | Ω | Where orbit crosses equator (heading north) |
+| Argument of Perigee | ω | Orientation of ellipse within orbital plane |
+| True Anomaly | ν | Position of spacecraft along orbit |
+
+---
+
+## Orbit Types
+
+| Orbit | Altitude | Period | Inclination | Uses |
+|-------|----------|--------|-------------|------|
+| LEO | 200–2000 km | 88–127 min | Any | Earth obs, ISS, Starlink |
+| MEO | 2000–35786 km | ~2–24 hr | Any | GPS, Galileo |
+| GEO | 35,786 km | 24 hr | ~0° | Comsat, weather |
+| HEO | Variable | > 24 hr | High | Molniya, polar coverage |
+| SSO (Sun-Synchronous) | 400–1000 km | ~97 min | ~97–98° | Earth imaging |
+| Polar | 400–1000 km | ~95 min | ~90° | Global coverage |
+
+---
+
+## Key Orbital Relationships
+
+### Orbital Velocity
+
+```
+v_circular = sqrt(μ / r)
+
+where μ = G × M_Earth = 3.986×10¹⁴ m³/s²
+      r = orbital radius from Earth's center
+```
+
+At 400 km (ISS altitude): r = 6771 km → v ≈ 7.67 km/s
+
+### Orbital Period
+
+```
+T = 2π × sqrt(a³ / μ)
+```
+
+At 400 km: T ≈ 92.5 minutes
+
+### Vis-Viva Equation
+
+Relates velocity to position on any conic orbit:
+
+```
+v² = μ × (2/r − 1/a)
+```
+
+At perigee (r_p): maximum velocity. At apogee (r_a): minimum velocity.
+
+---
+
+## Hohmann Transfer
+
+The most fuel-efficient two-burn transfer between circular orbits:
+
+```
+Transfer orbit semi-major axis: a_t = (r₁ + r₂) / 2
+
+ΔV₁ = sqrt(μ/r₁) × (sqrt(2r₂/(r₁+r₂)) − 1)
+ΔV₂ = sqrt(μ/r₂) × (1 − sqrt(2r₁/(r₁+r₂)))
+
+Transfer time: T_t = π × sqrt(a_t³ / μ)
+```
+
+---
+
+## Escape Velocity
+
+To leave Earth's gravity well from radius r:
+
+```
+v_escape = sqrt(2μ / r)
+
+At Earth's surface (r = 6371 km): v_escape ≈ 11.2 km/s
+```
+
+---
+
+## Orbit Perturbations (Non-Keplerian Effects)
+
+Real orbits deviate from Keplerian due to:
+
+| Perturbation | Effect | Magnitude |
+|-------------|--------|-----------|
+| J2 (Earth oblateness) | RAAN drift, perigee rotation | Dominant below GEO |
+| Atmospheric drag | Orbit decay (LEO) | Major below 1000 km |
+| Third body (Moon, Sun) | Perturbation of high orbits | Significant at GEO/beyond |
+| Solar radiation pressure | Small force proportional to area/mass | Notable on large craft |
+| Tides | Very small | Negligible for most |
+
+For propagation beyond Keplerian, see [Orbit Propagation](./orbit-propagation).
+
+---
+
+## C++ Implementation
+
+```cpp
+struct OrbitalElements {
+    double a;   // semi-major axis [m]
+    double e;   // eccentricity
+    double i;   // inclination [rad]
+    double raan; // right ascension of ascending node [rad]
+    double aop;  // argument of perigee [rad]
+    double nu;   // true anomaly [rad]
+};
+
+double orbital_period_s(double a_m) {
+    constexpr double MU = 3.986004418e14; // m³/s²
+    return 2.0 * M_PI * std::sqrt(std::pow(a_m, 3.0) / MU);
+}
+
+double circular_velocity_ms(double r_m) {
+    constexpr double MU = 3.986004418e14;
+    return std::sqrt(MU / r_m);
+}
+```
+
+---
+
+## Key References
+
+- [Orbital Physics Overview](./overview)
+- [Orbit Propagation](./orbit-propagation)
+- [Coordinate Frames](./coordinate-frames)
+- [Time Systems](./time-systems)
+- [Orbit Propagator (Synthesis)](../synthesis/orbit-propagator)

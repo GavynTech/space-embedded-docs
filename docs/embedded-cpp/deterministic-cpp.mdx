@@ -7,6 +7,151 @@ sidebar_position: 8
 
 # Deterministic C++
 
-*Full content coming soon. This page is part of the Embedded C/C++ section.*
+C++ is a large language. Not all of it is safe in a flight software context. The features you disable are not arbitrary restrictions — each one has a specific failure mode in embedded or safety-critical code.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## What Gets Disabled and Why
+
+### No Exceptions (`-fno-exceptions`)
+
+C++ exceptions require a runtime support library that performs stack unwinding. Stack unwinding is non-deterministic in time and requires dynamic memory allocation on most implementations.
+
+More critically: on a microcontroller with no OS, an unhandled exception terminates the program. There is no process supervisor to restart it.
+
+```cpp
+// Replace throw/catch with explicit error return codes
+enum class Status { OK, SENSOR_TIMEOUT, CRC_ERROR };
+
+Status read_sensor(SensorData* out) {
+    if (!wait_for_ready(TIMEOUT_MS)) return Status::SENSOR_TIMEOUT;
+    if (!verify_crc(raw_data))       return Status::CRC_ERROR;
+    *out = parse_data(raw_data);
+    return Status::OK;
+}
+```
+
+Build flag: `-fno-exceptions`
+
+### No RTTI (`-fno-rtti`)
+
+Run-Time Type Information (`dynamic_cast`, `typeid`) requires type metadata stored in the binary. This increases code size and `dynamic_cast` has non-deterministic cost.
+
+```cpp
+// Replace dynamic_cast with explicit type tags or virtual dispatch
+class Sensor {
+public:
+    virtual SensorType get_type() const = 0;
+    virtual bool read(float* val) = 0;
+};
+
+// No dynamic_cast needed — use virtual interface or tag
+```
+
+Build flag: `-fno-rtti`
+
+### No Dynamic Memory in Flight Code
+
+`new`/`delete` and `malloc`/`free` are non-deterministic (allocation time varies) and can fail. Replace with static allocation:
+
+```cpp
+// BANNED
+auto* sensor = new IMU_Sensor();
+
+// CORRECT — static instance
+static IMU_Sensor imu_sensor;
+
+// Or placement new into a static buffer (avoids heap, uses ctor)
+alignas(IMU_Sensor) static uint8_t imu_buf[sizeof(IMU_Sensor)];
+IMU_Sensor* imu = new (imu_buf) IMU_Sensor();   // placement new — no heap
+```
+
+### Restricted `virtual`
+
+Virtual functions require vtable lookup — one extra indirection per call. On hot paths (ADCS control loop running at 100 Hz), this is usually acceptable. Where it is not, use CRTP (Curiously Recurring Template Pattern) for static dispatch:
+
+```cpp
+// Dynamic dispatch — vtable lookup at runtime
+class Filter {
+public:
+    virtual float update(float input) = 0;
+};
+
+// Static dispatch — zero overhead, resolved at compile time
+template<typename Derived>
+class FilterBase {
+public:
+    float update(float input) {
+        return static_cast<Derived*>(this)->update_impl(input);
+    }
+};
+
+class LowPassFilter : public FilterBase<LowPassFilter> {
+public:
+    float update_impl(float input) {
+        state_ = alpha_ * input + (1.0f - alpha_) * state_;
+        return state_;
+    }
+private:
+    float state_ = 0.0f;
+    float alpha_ = 0.1f;
+};
+```
+
+---
+
+## What Is Safe to Use
+
+| Feature | Safe? | Notes |
+|---|---|---|
+| `constexpr` / `consteval` | Yes | Compile-time computation — zero runtime cost |
+| Templates | Yes | With care — avoid code bloat |
+| `std::array` | Yes | Fixed-size, no heap, same performance as C array |
+| `std::span` (C++20) | Yes | Non-owning view — no allocation |
+| Inline functions | Yes | Eliminates call overhead |
+| `static_assert` | Yes | Compile-time checks — zero runtime cost |
+| Namespaces | Yes | Zero runtime cost |
+| `enum class` | Yes | Type-safe enums |
+| `virtual` (non-critical paths) | Caution | Acceptable in init code, not in control loops |
+| STL containers (`vector`, `map`) | No | Use heap — banned |
+| `std::string` | No | Dynamic allocation |
+| `std::function` | No | Dynamic allocation for captures |
+| `iostream` | No | Large, non-deterministic |
+
+---
+
+## Compile-Time Safety Checks
+
+```cpp
+// Verify struct layout matches hardware register map
+struct SensorPacket {
+    uint16_t header;
+    uint32_t timestamp;
+    int16_t  accel[3];
+    int16_t  gyro[3];
+    uint16_t checksum;
+} __attribute__((packed));
+
+static_assert(sizeof(SensorPacket) == 22, "Packet size mismatch with hardware spec");
+static_assert(offsetof(SensorPacket, timestamp) == 2, "Timestamp offset wrong");
+
+// Verify buffer is large enough
+constexpr size_t MAX_PACKET_SIZE = 256;
+static_assert(sizeof(SensorPacket) <= MAX_PACKET_SIZE, "Packet exceeds buffer");
+```
+
+---
+
+## Recommended Build Flags for Flight C++
+
+```cmake
+add_compile_options(
+    -fno-exceptions          # disable C++ exceptions
+    -fno-rtti                # disable runtime type info
+    -fno-threadsafe-statics  # disable thread-safe static init (use RTOS primitives)
+    -fstack-usage            # emit .su files for stack analysis
+    -Wstack-usage=512        # warn if any function uses >512 bytes of stack
+    -Wall -Wextra
+    -Werror                  # warnings are errors in flight code
+)
+```

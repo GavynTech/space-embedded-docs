@@ -7,6 +7,149 @@ sidebar_position: 3
 
 # Orbit Propagation
 
-*Full content coming soon. This page is part of the Orbital Physics section.*
+Orbit propagation predicts where a spacecraft will be in the future given its current state. Pure Keplerian mechanics is only accurate for short intervals; real missions require perturbation models that account for drag, oblateness, solar pressure, and more.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Propagation Methods
+
+| Method | Accuracy | Cost | Use Case |
+|--------|----------|------|----------|
+| Keplerian (two-body) | Low (minutes) | Trivial | Quick estimates, onboard ephemeris |
+| SGP4/SDP4 | Moderate | Low | TLE-based ground tracking |
+| Cowell (numerical) | High | High | Mission planning, precision guidance |
+| Gauss-Jackson | High | Moderate | Long-duration numerical integration |
+| Encke | High | Moderate | Perturbation-as-correction |
+
+---
+
+## Two-Line Element Sets (TLEs)
+
+TLEs are the standard format for distributing tracked object orbital data. Published by US Space Command (space-track.org):
+
+```
+ISS (ZARYA)
+1 25544U 98067A   24120.54321678  .00015000  00000-0  27000-3 0  9993
+2 25544  51.6400 210.3000 0001234  89.5000 270.5000 15.49000000450000
+```
+
+| Field | Description |
+|-------|-------------|
+| Line 1, cols 19-32 | Epoch (YYDDD.FFFFFFFF) |
+| Line 1, col 34 | BSTAR drag term |
+| Line 2, col 9-16 | Inclination |
+| Line 2, col 18-25 | RAAN |
+| Line 2, col 27-33 | Eccentricity |
+| Line 2, col 35-42 | Argument of perigee |
+| Line 2, col 44-51 | Mean anomaly |
+| Line 2, col 53-63 | Mean motion (rev/day) |
+
+---
+
+## SGP4 Algorithm
+
+SGP4 (Simplified General Perturbations 4) is the standard propagator for TLEs. It accounts for:
+
+- J2, J3, J4 gravitational harmonics
+- Atmospheric drag (BSTAR term)
+- Lunar/solar gravitational perturbations (SDP4 for deep space)
+
+```c
+// Using libsgp4 (C library)
+#include "SGP4.h"
+
+elsetrec satrec;
+double startmfe, stopmfe, deltamin;
+
+// Initialize from TLE lines
+SGP4Funcs::twoline2rv(longstr1, longstr2,
+                       'c', 'e', 'i',
+                       wgs84, startmfe, stopmfe, deltamin,
+                       satrec);
+
+// Propagate to time T (minutes from epoch)
+double ro[3], vo[3]; // position [km], velocity [km/s]
+SGP4Funcs::sgp4(satrec, T_min, ro, vo);
+```
+
+---
+
+## Numerical Integration (Cowell)
+
+For highest accuracy, numerically integrate the equations of motion with all perturbations:
+
+```cpp
+struct State {
+    Eigen::Vector3d pos;  // [m]
+    Eigen::Vector3d vel;  // [m/s]
+};
+
+// Total acceleration including all perturbations
+Eigen::Vector3d total_accel(const State &s, double t_tai) {
+    return accel_gravity(s.pos)         // EGM2008 spherical harmonics
+         + accel_drag(s.pos, s.vel, t_tai) // NRLMSISE-00 atmosphere
+         + accel_srp(s.pos, t_tai)     // Solar radiation pressure
+         + accel_third_body(s.pos, t_tai, MOON)
+         + accel_third_body(s.pos, t_tai, SUN);
+}
+
+// RK4 step
+State rk4_step(const State &s, double t, double dt) {
+    auto f = [&](const State &x, double tau) -> State {
+        return { x.vel, total_accel(x, tau) };
+    };
+    State k1 = f(s, t);
+    State k2 = f({s.pos + 0.5*dt*k1.pos, s.vel + 0.5*dt*k1.vel}, t + 0.5*dt);
+    State k3 = f({s.pos + 0.5*dt*k2.pos, s.vel + 0.5*dt*k2.vel}, t + 0.5*dt);
+    State k4 = f({s.pos + dt*k3.pos,     s.vel + dt*k3.vel},     t + dt);
+    return {
+        s.pos + (dt/6.0)*(k1.pos + 2*k2.pos + 2*k3.pos + k4.pos),
+        s.vel + (dt/6.0)*(k1.vel + 2*k2.vel + 2*k3.vel + k4.vel)
+    };
+}
+```
+
+---
+
+## J2 Perturbation
+
+Earth's equatorial bulge (J2 coefficient = 1.08263×10⁻³) causes:
+
+- **RAAN precession**: Ω̇ = −(3/2) × n × J2 × (R_E/p)² × cos(i)
+- **Argument of perigee drift**: ω̇ = (3/4) × n × J2 × (R_E/p)² × (5cos²i − 1)
+
+For SSO (Sun-synchronous orbit): choose inclination so RAAN precesses at exactly 0.9856°/day (one revolution per year), keeping the orbit in constant sun angle.
+
+---
+
+## Atmospheric Drag
+
+Below ~1000 km, atmospheric drag causes orbital decay:
+
+```
+a_drag = −(1/2) × (C_D × A / m) × ρ × v_rel²  × v̂_rel
+
+where:
+  C_D ≈ 2.2 (typical for spacecraft)
+  A/m = ballistic coefficient inverse [m²/kg]
+  ρ   = atmospheric density [kg/m³] (from NRLMSISE-00 model)
+  v_rel = velocity relative to rotating atmosphere
+```
+
+Higher solar activity → more atmospheric heating → density increases → faster decay.
+
+---
+
+## Onboard Propagation
+
+For onboard use, a simplified propagator runs in real-time to predict upcoming ground station contacts, eclipse periods, and maneuver windows. See [Orbit Propagator](../synthesis/orbit-propagator) for an embedded C++ implementation.
+
+---
+
+## Key References
+
+- [Keplerian Orbits](./keplerian-orbits)
+- [Coordinate Frames](./coordinate-frames)
+- [Time Systems](./time-systems)
+- [Orbit Propagator (Synthesis)](../synthesis/orbit-propagator)
+- [Orbital Physics Overview](./overview)

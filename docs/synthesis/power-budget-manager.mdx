@@ -7,6 +7,239 @@ sidebar_position: 8
 
 # Power Budget Manager
 
-*Full content coming soon. This page is part of the Synthesis section.*
+This page implements a real-time power budget manager for embedded spacecraft. It tracks power consumption per load, enforces budget limits, predicts battery state of charge, and sheds non-essential loads automatically when the budget is exceeded.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Design Goals
+
+- Track real-time power draw per load from telemetry
+- Enforce maximum power budget in each spacecraft mode
+- Predict SoC trajectory and pre-shed loads before undervoltage
+- No dynamic allocation, deterministic execution
+
+---
+
+## Power Model
+
+```
+Available Power = Solar Input − Battery Charging
+Budget Check:
+  if (total_load > available_power + max_discharge_rate):
+      shed lowest-priority loads until within budget
+```
+
+---
+
+## Load Registry
+
+```c
+// power_budget.h
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+#define MAX_LOADS 32u
+
+typedef enum {
+    LOAD_PRIO_CRITICAL   = 0,   // OBC, comms — never shed
+    LOAD_PRIO_HIGH       = 1,   // ADCS
+    LOAD_PRIO_MEDIUM     = 2,   // Heaters, housekeeping
+    LOAD_PRIO_LOW        = 3,   // Payload, science
+    LOAD_PRIO_COUNT
+} LoadPriority_t;
+
+typedef struct {
+    uint8_t         id;
+    const char     *name;
+    LoadPriority_t  priority;
+    float           nominal_w;       // expected power draw [W]
+    float           measured_w;      // current measured draw [W]
+    bool            enabled;
+    bool            auto_shed;       // can be automatically disabled
+} Load_t;
+
+typedef struct {
+    Load_t   loads[MAX_LOADS];
+    uint8_t  load_count;
+
+    float    solar_input_w;
+    float    batt_voltage_v;
+    float    batt_current_ma;        // positive = charging
+    float    batt_soc_pct;
+
+    float    budget_limit_w;         // max total from battery
+    float    shed_threshold_soc_pct; // SoC below which to shed
+    float    critical_soc_pct;       // SoC for safe mode entry
+
+    uint32_t last_update_tai;
+} PowerBudget_t;
+```
+
+---
+
+## Initialization
+
+```c
+// power_budget.c
+#include "power_budget.h"
+#include "eps_api.h"
+#include "event_log.h"
+
+void pb_init(PowerBudget_t *pb) {
+    pb->load_count        = 0;
+    pb->budget_limit_w    = 15.0f;
+    pb->shed_threshold_soc_pct = 30.0f;
+    pb->critical_soc_pct       = 15.0f;
+    pb->last_update_tai   = 0;
+}
+
+int pb_register_load(PowerBudget_t *pb, uint8_t id, const char *name,
+                     LoadPriority_t prio, float nominal_w, bool auto_shed) {
+    if (pb->load_count >= MAX_LOADS) return -1;
+    Load_t *l = &pb->loads[pb->load_count++];
+    l->id         = id;
+    l->name       = name;
+    l->priority   = prio;
+    l->nominal_w  = nominal_w;
+    l->measured_w = 0.0f;
+    l->enabled    = true;
+    l->auto_shed  = auto_shed;
+    return 0;
+}
+```
+
+---
+
+## Telemetry Update
+
+```c
+void pb_update_telemetry(PowerBudget_t *pb,
+                          const EpsTlm_t *eps,
+                          uint32_t t_tai) {
+    pb->solar_input_w   = eps->solar_power_w;
+    pb->batt_voltage_v  = eps->batt_voltage_v;
+    pb->batt_current_ma = eps->batt_current_ma;
+    pb->batt_soc_pct    = eps->batt_soc_pct;
+    pb->last_update_tai = t_tai;
+
+    // Update per-load measurements from EPS current sensors
+    for (uint8_t i = 0; i < pb->load_count; i++) {
+        pb->loads[i].measured_w = eps_get_load_power_w(pb->loads[i].id);
+    }
+}
+```
+
+---
+
+## Budget Enforcement
+
+```c
+static float pb_total_load_w(const PowerBudget_t *pb) {
+    float total = 0.0f;
+    for (uint8_t i = 0; i < pb->load_count; i++) {
+        if (pb->loads[i].enabled) {
+            total += pb->loads[i].measured_w;
+        }
+    }
+    return total;
+}
+
+// Find and disable lowest-priority sheddable load
+static bool pb_shed_one(PowerBudget_t *pb) {
+    // Start from lowest priority
+    for (int prio = (int)LOAD_PRIO_LOW; prio >= (int)LOAD_PRIO_MEDIUM; prio--) {
+        for (uint8_t i = 0; i < pb->load_count; i++) {
+            Load_t *l = &pb->loads[i];
+            if (l->enabled && l->auto_shed && (int)l->priority == prio) {
+                l->enabled = false;
+                eps_set_load(l->id, false);
+                event_log(EVT_POWER_SHED, l->id, (uint32_t)(l->measured_w * 100));
+                return true;
+            }
+        }
+    }
+    return false; // nothing left to shed
+}
+
+void pb_enforce_budget(PowerBudget_t *pb) {
+    float available = pb->solar_input_w + (pb->budget_limit_w);
+    float total     = pb_total_load_w(pb);
+
+    // Check SoC threshold
+    if (pb->batt_soc_pct < pb->shed_threshold_soc_pct) {
+        // Shed until within budget or nothing left
+        while (pb_total_load_w(pb) > available) {
+            if (!pb_shed_one(pb)) break;
+        }
+    }
+
+    // Critical SoC: signal for safe mode
+    if (pb->batt_soc_pct < pb->critical_soc_pct) {
+        event_log(EVT_POWER_CRITICAL, (uint32_t)(pb->batt_soc_pct * 100), 0);
+        // Caller (health monitor) will trigger safe mode FSM
+    }
+}
+```
+
+---
+
+## SoC Prediction
+
+Predict SoC N minutes into the future given current load:
+
+```c
+float pb_predict_soc(const PowerBudget_t *pb, float minutes_ahead) {
+    float total_w   = pb_total_load_w(pb);
+    float net_w     = pb->solar_input_w - total_w;   // positive = charging
+    float capacity_wh = BATTERY_CAPACITY_WH;
+
+    float delta_wh  = net_w * (minutes_ahead / 60.0f);
+    float delta_soc = (delta_wh / capacity_wh) * 100.0f;
+
+    float predicted = pb->batt_soc_pct + delta_soc;
+    // Clamp to valid range
+    if (predicted < 0.0f) predicted = 0.0f;
+    if (predicted > 100.0f) predicted = 100.0f;
+    return predicted;
+}
+```
+
+---
+
+## Telemetry Output
+
+```c
+typedef struct {
+    float   total_load_w;
+    float   solar_input_w;
+    float   batt_soc_pct;
+    float   batt_voltage_v;
+    float   predicted_soc_30min;
+    uint8_t shedded_load_count;
+    uint8_t reserved[3];
+} PowerBudgetTlm_t;
+
+void pb_fill_tlm(const PowerBudget_t *pb, PowerBudgetTlm_t *tlm) {
+    tlm->total_load_w        = pb_total_load_w(pb);
+    tlm->solar_input_w       = pb->solar_input_w;
+    tlm->batt_soc_pct        = pb->batt_soc_pct;
+    tlm->batt_voltage_v      = pb->batt_voltage_v;
+    tlm->predicted_soc_30min = pb_predict_soc(pb, 30.0f);
+
+    uint8_t shed = 0;
+    for (uint8_t i = 0; i < pb->load_count; i++) {
+        if (!pb->loads[i].enabled && pb->loads[i].auto_shed) shed++;
+    }
+    tlm->shedded_load_count = shed;
+}
+```
+
+---
+
+## Key References
+
+- [Power Systems](../space-hardware/power-systems)
+- [Health & Safety Monitoring](../flight-software/health-safety)
+- [Safe Mode FSM](./safe-mode-fsm)
+- [Synthesis Overview](./overview)

@@ -7,6 +7,120 @@ sidebar_position: 6
 
 # Spacecraft Buses
 
-*Full content coming soon. This page is part of the Space Hardware section.*
+A spacecraft bus is the supporting structure and infrastructure that carries and operates the payload. It provides power, attitude control, communications, thermal management, and computing. Standardized bus platforms reduce cost and risk by reusing proven designs.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Bus vs. Payload
+
+| Component | Bus | Payload |
+|-----------|-----|---------|
+| What it does | Keeps spacecraft alive | Accomplishes the mission |
+| Examples | EPS, ADCS, OBC, Comms | Camera, radar, science instrument |
+| Lifetime requirement | Full mission | Operational period |
+| Redundancy | Required | Mission-dependent |
+
+---
+
+## Common Commercial Bus Platforms
+
+### Small Satellite Buses (< 500 kg)
+
+| Bus | Provider | Mass Class | Notable Missions |
+|-----|----------|-----------|-----------------|
+| ESPA-class | Various | 50–180 kg | STP-2, ORBCOMM |
+| RS-300 | York Space | < 300 kg | Various DoD |
+| GEOStar | Orbital/Northrop | < 500 kg | Telesat |
+| Microstar | Ball Aerospace | 100–200 kg | CYGNSS |
+
+### Medium Buses (500–3000 kg)
+
+| Bus | Provider | Mass Class | Notable Missions |
+|-----|----------|-----------|-----------------|
+| Star-2 | Orbital ATK | 500–1000 kg | Various GEO comsat |
+| LS-1300 | SSL (Maxar) | 1000–3500 kg | Most major comsats |
+| Boeing 702 | Boeing | 2000–6000 kg | Direct TV, XM Radio |
+
+### Large Buses (> 3000 kg)
+
+| Bus | Provider | Notes |
+|-----|----------|-------|
+| Boeing 702HP | Boeing | High-power GEO, ion propulsion |
+| Airbus Eurostar 3000 | Airbus | Standard GEO comsat |
+| Lockheed A2100 | Lockheed | Military/commercial GEO |
+
+---
+
+## Government/Agency Bus Standards
+
+### NASA
+
+NASA programs often use mission-unique buses but reuse heritage:
+
+- **LRO (Lunar Reconnaissance Orbiter)**: derived from GSFC heritage
+- **MAVEN, MRO**: designed specifically for Mars orbit insertion ΔV budget
+- **GOES-R**: large GEO weather satellite bus
+
+### ESA
+
+- **Eurostar Bus**: standard for commercial GEO missions
+- **PRIMA**: medium-class satellite platform for science missions
+
+### CubeSat Standard
+
+See [CubeSat Hardware](./cubesat-hardware) for the 1U–12U standard form factors used by universities and commercial small-sat operators.
+
+---
+
+## Bus Subsystems
+
+### Structure
+
+- Primary structure: aluminum or CFRP (carbon fiber reinforced polymer)
+- Must survive launch loads (typically 20g quasi-static, 100–2000 Hz random vibration)
+- Stiffness requirements: first mode > launch vehicle minimum (typically > 35 Hz)
+
+### Thermal Control
+
+See [Thermal Vacuum](./thermal-vacuum) for passive/active thermal control details.
+
+### Propulsion
+
+- Options: cold gas, monoprop, biprop, electric
+- Sized to ΔV budget: orbit raise, stationkeeping, deorbit
+- Propellant fraction can dominate bus mass in high-ΔV missions
+
+### Power
+
+See [Power Systems](./power-systems) for EPS architecture.
+
+### Communications
+
+- Typically S-band TT&C (command/telemetry)
+- High-rate science/payload downlink on X-band or Ka-band
+- Telemetry rates: 1 kbps – 1+ Gbps depending on band and antenna
+
+---
+
+## Bus Performance Parameters
+
+When selecting or designing a bus, these are the key traded parameters:
+
+| Parameter | How to Size It |
+|-----------|---------------|
+| Power | Payload power + bus overhead + margin (30%) |
+| Mass | Launch vehicle capability − payload mass |
+| Volume | Payload envelope + bus equipment |
+| Pointing | Payload requirements drive ADCS accuracy spec |
+| Data rate | Downlink duty cycle × science data rate |
+| Lifetime | Mission requirement + consumables (propellant, battery) |
+
+---
+
+## Key References
+
+- [Space Hardware Overview](./overview)
+- [Power Systems](./power-systems)
+- [Sensors & Actuators](./sensors-actuators)
+- [Thermal Vacuum](./thermal-vacuum)
+- [CubeSat Hardware](./cubesat-hardware)

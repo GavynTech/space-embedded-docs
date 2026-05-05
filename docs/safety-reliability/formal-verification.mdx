@@ -7,6 +7,135 @@ sidebar_position: 5
 
 # Formal Verification
 
-*Full content coming soon. This page is part of the Safety & Reliability section.*
+Formal verification uses mathematical proof to demonstrate that software satisfies its specification. Unlike testing (which samples finite cases) or static analysis (which approximates), formal verification provides a guarantee over all possible inputs and states.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Why Formal Verification in Space
+
+- Testing cannot cover all input combinations — formal methods prove universal properties
+- DO-178C explicitly accepts formal methods as alternative means of compliance
+- Used in Mars Curiosity and Perseverance (seL4 kernel), Airbus A380 flight control (Astrée), and Ariane 5 heritage work
+- Critical for software with known catastrophic failure modes
+
+---
+
+## Verification Approaches
+
+### Model Checking
+
+Exhaustively explores all reachable system states to verify temporal logic properties.
+
+**Example property (LTL — Linear Temporal Logic)**:
+```
+G (REQUEST → F RESPONSE)   // Globally, a request is followed by a response
+G (¬DEADLOCK)              // Never reach a deadlock state
+G (SAFE_MODE → X ¬PAYLOAD_ON)  // Next state after safe mode: payload off
+```
+
+**Tools**:
+- **SPIN** (Promela): open-source model checker for concurrent systems
+- **NuSMV / nuXmv**: symbolic model checker
+- **UPPAAL**: timed automata model checker (for real-time properties)
+
+```promela
+// Promela model: mutual exclusion
+bool flag[2] = {false, false};
+byte turn = 0;
+
+active [2] proctype Process() {
+    byte id = _pid;
+    do ::
+        flag[id] = true;
+        do :: flag[1-id] -> turn = 1-id; flag[id] = false; flag[id] = true od;
+        // Critical section
+        assert(!flag[1-id]);   // Safety: mutual exclusion
+        flag[id] = false;
+    od;
+}
+```
+
+### Theorem Proving (Deductive Verification)
+
+Express program and specification in a formal logic; prove correctness using axioms and rules. Requires manual proof development but handles infinite state spaces.
+
+**Tools**:
+- **Coq**: dependently typed proof assistant
+- **Isabelle/HOL**: higher-order logic theorem prover
+- **PVS**: Prototype Verification System (widely used in NASA)
+- **Frama-C + WP plugin**: C code verification using weakest preconditions
+
+```c
+// Frama-C ACSL specification
+/*@ requires \valid(arr + (0..n-1));
+  @ requires n > 0;
+  @ ensures \result == \max(0..n-1, \lambda integer i; arr[i]);
+  @ assigns \nothing;
+  @*/
+int array_max(const int *arr, int n) {
+    int max = arr[0];
+    for (int i = 1; i < n; i++) {
+        /*@ loop invariant 1 <= i <= n;
+          @ loop invariant max == \max(0..i-1, \lambda integer j; arr[j]);
+          @ loop assigns max, i;
+          @*/
+        if (arr[i] > max) max = arr[i];
+    }
+    return max;
+}
+```
+
+### Abstract Interpretation
+
+See [Static Analysis](./static-analysis). Polyspace Code Prover uses abstract interpretation to formally prove absence of specific runtime errors (null deref, overflow, etc.).
+
+---
+
+## seL4: Formally Verified Microkernel
+
+The seL4 microkernel is the only formally verified general-purpose OS kernel. It has been proven:
+
+1. **Functional correctness**: C implementation matches abstract specification
+2. **Integrity**: unauthorized processes cannot corrupt others' memory
+3. **Confidentiality**: no information flows from classified to unclassified
+4. **Worst-case execution time**: verified timing bounds
+
+Used in:
+- DARPA HACMS (High-Assurance Cyber Military Systems)
+- Boeing autonomous systems
+- NASA MSFC (Marshall Space Flight Center) CubeSat work
+
+---
+
+## Scope of Formal Methods in Practice
+
+Formal verification of a full flight software stack is impractical. In practice:
+
+| Scope | Method | Effort |
+|-------|--------|--------|
+| RTOS kernel | seL4 or model check scheduler | Very high |
+| Critical algorithms (Kalman, TMR voter) | Theorem proving | High |
+| Data store integrity | Model checking | Medium |
+| API contracts | Frama-C ACSL | Medium |
+| Communication protocols | SPIN model checking | Medium |
+| Runtime error absence | Polyspace Code Prover | Low-medium |
+
+---
+
+## Certification Credit
+
+DO-178C and ECSS-E-ST-40C both allow formal methods to substitute for testing objectives:
+
+- Formal proof of decision coverage can replace MC/DC testing
+- Verified runtime error absence can replace certain structural coverage requirements
+- Evidence artifacts (proof scripts, model files, tool qualification) become certification deliverables
+
+---
+
+## Key References
+
+- [Safety & Reliability Overview](./overview)
+- [Static Analysis](./static-analysis)
+- [DO-178C](./do-178c)
+- [Testing Strategy](./testing-strategy)
+- [RTOS Overview](../rtos/overview)

@@ -1,12 +1,118 @@
 ---
 id: zephyr
-title: Zephyr
+title: Zephyr RTOS
 sidebar_label: Zephyr
 sidebar_position: 5
 ---
 
-# Zephyr
+# Zephyr RTOS
 
-*Full content coming soon. This page is part of the RTOS section.*
+Zephyr is a modern open-source RTOS backed by the Linux Foundation. It is growing rapidly in the commercial small satellite space, particularly for CubeSats and new entrant spacecraft where development speed matters and VxWorks licensing costs are prohibitive.
 
-See the [overview](./overview) for what this page covers.
+It is not yet as flight-proven as FreeRTOS or RTEMS, but it has strong driver support, an active community, and a design that takes safety-critical use seriously.
+
+---
+
+## Key Characteristics
+
+- **Kernel model:** Cooperative + preemptive scheduling, configurable
+- **Memory model:** Static allocation first-class; dynamic via `k_malloc` on optional heap
+- **Device model:** Devicetree-based hardware description (borrowed from Linux)
+- **Build system:** CMake + west (Zephyr's meta-tool)
+- **License:** Apache 2.0
+
+---
+
+## Threads
+
+```c
+#include <zephyr/kernel.h>
+
+// Define stack statically
+K_THREAD_STACK_DEFINE(adcs_stack, 2048);
+struct k_thread adcs_thread_data;
+
+void adcs_entry(void* p1, void* p2, void* p3) {
+    while (1) {
+        run_adcs_cycle();
+        k_sleep(K_MSEC(100));   // 10 Hz
+    }
+}
+
+// Create thread at runtime
+k_tid_t adcs_tid = k_thread_create(
+    &adcs_thread_data,
+    adcs_stack,
+    K_THREAD_STACK_SIZEOF(adcs_stack),
+    adcs_entry,
+    NULL, NULL, NULL,
+    5,          // priority (lower number = higher priority in Zephyr)
+    0,          // options
+    K_NO_WAIT   // start immediately
+);
+
+k_thread_name_set(adcs_tid, "adcs");
+```
+
+---
+
+## IPC Primitives
+
+```c
+// Message queue
+K_MSGQ_DEFINE(sensor_q, sizeof(sensor_t), 16, 4);
+
+// Producer
+sensor_t s = read_imu();
+k_msgq_put(&sensor_q, &s, K_MSEC(10));
+
+// Consumer
+sensor_t rx;
+k_msgq_get(&sensor_q, &rx, K_FOREVER);
+
+// Semaphore
+K_SEM_DEFINE(data_ready, 0, 1);
+k_sem_give(&data_ready);           // signal
+k_sem_take(&data_ready, K_FOREVER); // wait
+
+// Mutex
+K_MUTEX_DEFINE(i2c_mutex);
+k_mutex_lock(&i2c_mutex, K_FOREVER);
+i2c_read(...);
+k_mutex_unlock(&i2c_mutex);
+```
+
+---
+
+## Devicetree and Drivers
+
+Zephyr's device model uses devicetree overlays to describe hardware, and a unified driver API:
+
+```c
+// Get I2C device handle from devicetree
+const struct device* i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c1));
+
+// Unified sensor API
+const struct device* imu = DEVICE_DT_GET(DT_NODELABEL(icm42688));
+struct sensor_value accel[3];
+sensor_sample_fetch(imu);
+sensor_channel_get(imu, SENSOR_CHAN_ACCEL_XYZ, accel);
+```
+
+The abstraction means switching from one IMU to another requires only a devicetree change, not code changes — valuable when hardware changes between prototype and flight.
+
+---
+
+## Zephyr vs FreeRTOS for Space
+
+| | Zephyr | FreeRTOS |
+|---|---|---|
+| Maturity | Younger, fast-growing | Very mature |
+| Driver ecosystem | Extensive (borrowed from Linux) | Limited (mostly DIY) |
+| Build system | Modern (CMake + west) | Simpler |
+| Static analysis | Good tooling | Good tooling |
+| Flight heritage | Limited (growing) | Significant in CubeSats |
+| ARM Cortex-M support | Excellent | Excellent |
+| Configuration | Kconfig (Linux-style) | FreeRTOSConfig.h |
+
+For new projects starting today, Zephyr is worth evaluating. For programs requiring extensive heritage or cFS compatibility, RTEMS or FreeRTOS remains the safer choice.

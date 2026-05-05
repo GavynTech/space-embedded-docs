@@ -7,6 +7,179 @@ sidebar_position: 7
 
 # IPC Patterns
 
-*Full content coming soon. This page is part of the RTOS section.*
+Inter-Process Communication (IPC) in an RTOS context means safely sharing data and events between tasks and ISRs. Choosing the wrong primitive causes priority inversion, race conditions, or unnecessary blocking.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Decision Guide
+
+```
+Need to pass DATA between tasks?         → Queue
+Need to SIGNAL an event?                 → Binary semaphore or task notification
+Need MUTUAL EXCLUSION with tasks?        → Mutex (priority inheritance)
+Need to count RESOURCES?                 → Counting semaphore
+Need BROADCAST to multiple tasks?        → Event groups
+Need ISR → task signaling?               → Binary semaphore (FromISR variant)
+Need high-frequency single-word update?  → Atomic variable + memory barrier
+```
+
+---
+
+## Queue — The Primary Data Channel
+
+```c
+// Create a queue of 16 sensor_reading_t messages
+QueueHandle_t xSensorQ = xQueueCreate(16, sizeof(sensor_reading_t));
+
+// Producer (sensor task or ISR)
+sensor_reading_t reading = get_imu_sample();
+xQueueSend(xSensorQ, &reading, pdMS_TO_TICKS(5));  // 5ms timeout
+
+// From ISR
+BaseType_t xWoken = pdFALSE;
+xQueueSendFromISR(xSensorQ, &reading, &xWoken);
+portYIELD_FROM_ISR(xWoken);
+
+// Consumer — blocks until data available
+sensor_reading_t rx;
+xQueueReceive(xSensorQ, &rx, portMAX_DELAY);
+```
+
+**Queue semantics:** FIFO, thread-safe, no need for external locking. The consumer blocks with zero CPU usage until data arrives.
+
+**Peek without removing:**
+```c
+// Look at the front of the queue without removing
+xQueuePeek(xSensorQ, &rx, pdMS_TO_TICKS(10));
+```
+
+---
+
+## Binary Semaphore — Event Signaling
+
+Use when one task signals another that something happened (not passing data):
+
+```c
+SemaphoreHandle_t xEvt = xSemaphoreCreateBinary();
+
+// Signaler (ISR or task)
+xSemaphoreGive(xEvt);
+
+// Waiter
+xSemaphoreTake(xEvt, portMAX_DELAY);  // blocks until signal
+process_event();
+```
+
+**Important:** Binary semaphores do NOT have priority inheritance. If two tasks compete for a binary semaphore, use a mutex instead to avoid priority inversion.
+
+---
+
+## Mutex — Mutual Exclusion
+
+Protect shared resources (I2C bus, UART, global state) between tasks:
+
+```c
+MutexHandle_t xI2CMutex = xSemaphoreCreateMutex();
+
+void task_imu(void* p) {
+    for (;;) {
+        if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            imu_read_i2c(&imu_data);         // exclusive I2C access
+            xSemaphoreGive(xI2CMutex);
+        } else {
+            log_event(EVENT_I2C_CONTENTION, 0, 0);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+```
+
+FreeRTOS mutexes implement **priority inheritance** — if a high-priority task blocks on a mutex held by a low-priority task, the low-priority task temporarily runs at the higher priority. This prevents unbounded priority inversion.
+
+**Mutexes must NOT be used from ISRs.** Only tasks can acquire mutexes.
+
+---
+
+## Task Notifications — Fastest IPC
+
+Task notifications are a direct signal from one task or ISR to a specific task. Faster than semaphores (no queue data structure), can pass a 32-bit value.
+
+```c
+TaskHandle_t xDMATask;
+
+// ISR — notify the DMA processing task
+void DMA1_Stream0_IRQHandler(void) {
+    DMA1->LIFCR = DMA_LIFCR_CTCIF0;   // clear interrupt flag
+    BaseType_t xWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(xDMATask, &xWoken);
+    portYIELD_FROM_ISR(xWoken);
+}
+
+// Task — wait for notification
+void vDMATask(void* p) {
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // block until notified
+        process_dma_buffer();
+    }
+}
+```
+
+Task notifications replace binary semaphores for ISR → task signaling with lower overhead and no creation overhead.
+
+---
+
+## Event Groups — Broadcast / Multi-Flag
+
+When a task needs to wait for multiple events, or multiple tasks need to be notified of one event:
+
+```c
+EventGroupHandle_t xEvents = xEventGroupCreate();
+
+#define EVT_GPS_FIX     (1 << 0)
+#define EVT_MAG_READY   (1 << 1)
+#define EVT_IMU_READY   (1 << 2)
+
+// Set bits from tasks
+xEventGroupSetBits(xEvents, EVT_GPS_FIX);
+
+// Wait for ALL three sensors ready before starting EKF
+EventBits_t bits = xEventGroupWaitBits(
+    xEvents,
+    EVT_GPS_FIX | EVT_MAG_READY | EVT_IMU_READY,  // bits to wait for
+    pdTRUE,      // clear bits on exit
+    pdTRUE,      // wait for ALL bits (pdFALSE = wait for ANY)
+    portMAX_DELAY
+);
+```
+
+---
+
+## Stream Buffer — Zero-Copy Byte Stream
+
+For streaming data (UART receive, telemetry), a stream buffer is more efficient than a queue of bytes:
+
+```c
+StreamBufferHandle_t xUARTBuf = xStreamBufferCreate(
+    512,   // buffer size in bytes
+    1      // trigger level — unblock receiver when ≥1 byte available
+);
+
+// ISR — push received bytes
+void UART1_IRQHandler(void) {
+    uint8_t b = UART1->DR;
+    BaseType_t xWoken = pdFALSE;
+    xStreamBufferSendFromISR(xUARTBuf, &b, 1, &xWoken);
+    portYIELD_FROM_ISR(xWoken);
+}
+
+// Task — read complete packets
+void vCommandParser(void* p) {
+    uint8_t buf[128];
+    for (;;) {
+        size_t n = xStreamBufferReceive(xUARTBuf, buf, sizeof(buf), portMAX_DELAY);
+        parse_command(buf, n);
+    }
+}
+```
+
+Stream buffers have a restriction: exactly one writer and one reader (SPSC — single producer, single consumer). For multiple writers, use a queue.

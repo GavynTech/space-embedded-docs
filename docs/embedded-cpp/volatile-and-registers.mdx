@@ -1,12 +1,117 @@
 ---
 id: volatile-and-registers
-title: Volatile & Registers
+title: Volatile & Hardware Registers
 sidebar_label: Volatile & Registers
 sidebar_position: 5
 ---
 
-# Volatile & Registers
+# Volatile & Hardware Registers
 
-*Full content coming soon. This page is part of the Embedded C/C++ section.*
+`volatile` is not a performance hint. It is a correctness requirement. Omitting it on hardware register accesses is a bug that works in debug builds and silently fails under optimization.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## What `volatile` Does
+
+Without `volatile`, the compiler assumes memory it writes to and reads from is only changed by your code. It will eliminate reads and writes it considers redundant.
+
+Hardware registers break this assumption:
+- A status register may change between reads with no write in between (a peripheral updated it)
+- Reading a register may have a side effect (clears an interrupt flag)
+- A write-only register may need multiple writes to the same value (FIFO push)
+
+```c
+// WRONG — compiler may eliminate the loop entirely
+uint32_t* status = (uint32_t*)0x40001000;
+while (!(*status & STATUS_READY_BIT));   // "never changes" → optimized away
+
+// CORRECT
+volatile uint32_t* status = (volatile uint32_t*)0x40001000;
+while (!(*status & STATUS_READY_BIT));   // re-read every iteration — guaranteed
+```
+
+---
+
+## Defining Registers — Two Patterns
+
+**Macro style:**
+```c
+#define UART1_BASE   0x40001000UL
+#define UART1_SR     (*(volatile uint32_t*)(UART1_BASE + 0x00))
+#define UART1_DR     (*(volatile uint32_t*)(UART1_BASE + 0x04))
+#define UART1_CR1    (*(volatile uint32_t*)(UART1_BASE + 0x0C))
+
+UART1_CR1 |= (1U << 13);               // enable UART
+while (!(UART1_SR & (1U << 7)));        // wait TXE
+UART1_DR = 'A';
+```
+
+**Struct overlay** (used by CMSIS — standard for Cortex-M):
+```c
+typedef struct {
+    volatile uint32_t SR;    // 0x00 status
+    volatile uint32_t DR;    // 0x04 data
+    volatile uint32_t BRR;   // 0x08 baud rate
+    volatile uint32_t CR1;   // 0x0C control 1
+} UART_TypeDef;
+
+#define UART1  ((UART_TypeDef*)0x40001000UL)
+
+UART1->CR1 |= (1U << 13);
+while (!(UART1->SR & (1U << 7)));
+UART1->DR = 'A';
+```
+
+---
+
+## Read-Modify-Write Atomicity
+
+`|=` expands to read → modify → write. An ISR firing between the read and write that touches the same register produces a race condition.
+
+```c
+// NOT atomic
+GPIOA->ODR |= (1U << 5);
+
+// Atomic alternatives
+GPIOA->BSRR = (1U << 5);           // atomic set pin 5
+GPIOA->BSRR = (1U << (5 + 16));    // atomic clear pin 5
+
+// Or protect with interrupt disable
+uint32_t primask = __get_PRIMASK();
+__disable_irq();
+UART1->CR1 |= (1U << 13);
+__set_PRIMASK(primask);   // restore, not just re-enable
+```
+
+---
+
+## `volatile` Does Not Mean Thread-Safe
+
+On ARM, `volatile` prevents compiler reordering only. It does not insert hardware memory barriers. For ISR ↔ task shared state, add `__DMB()`:
+
+```c
+volatile bool data_ready = false;
+volatile uint8_t data[64];
+
+// ISR — CORRECT: barrier before publishing flag
+data[0] = read_sensor();
+__DMB();           // all writes before this complete before writes after
+data_ready = true;
+```
+
+For anything more than a single flag, use RTOS queues — they include the necessary barriers.
+
+---
+
+## Common Mistakes
+
+```c
+// 1. Casting away volatile — compiler may optimize the read
+volatile uint32_t* reg = (volatile uint32_t*)0x40001000;
+uint32_t val = *(uint32_t*)reg;   // WRONG
+uint32_t val = *reg;              // CORRECT
+
+// 2. volatile for cross-task flags on SMP — use C11 atomics instead
+#include <stdatomic.h>
+atomic_bool flag = false;         // generates proper barriers
+```

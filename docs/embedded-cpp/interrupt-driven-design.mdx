@@ -7,6 +7,155 @@ sidebar_position: 6
 
 # Interrupt-Driven Design
 
-*Full content coming soon. This page is part of the Embedded C/C++ section.*
+Interrupts are how hardware tells software something happened. A sensor has data ready. A UART received a byte. A timer fired. Understanding how to write safe interrupt handlers — and how to share data between them and the rest of your code — is fundamental to embedded systems.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## The ISR Rules
+
+An Interrupt Service Routine (ISR) runs with the preemptive scheduler suspended (or in privileged context). It must obey strict rules:
+
+1. **Keep it short.** An ISR that takes too long delays other interrupts and breaks timing. Post data to a queue and handle it in a task.
+2. **No blocking calls.** Never call `vTaskDelay()`, `xSemaphoreTake()` with a timeout, or any function that may block.
+3. **Use FromISR variants.** FreeRTOS provides ISR-safe versions of all IPC primitives: `xQueueSendFromISR()`, `xSemaphoreGiveFromISR()`.
+4. **Yield if unblocked a higher-priority task.** After posting to a queue from an ISR, call `portYIELD_FROM_ISR(xHigherPriorityTaskWoken)`.
+
+---
+
+## ISR Declaration (ARM Cortex-M)
+
+```c
+// Cortex-M — ISR names are fixed by the vector table
+void UART1_IRQHandler(void) {
+    uint32_t sr = UART1->SR;
+
+    if (sr & UART_SR_RXNE) {           // receive data register not empty
+        uint8_t byte = (uint8_t)UART1->DR;
+
+        BaseType_t xWoken = pdFALSE;
+        xQueueSendFromISR(xRxQueue, &byte, &xWoken);
+        portYIELD_FROM_ISR(xWoken);    // yield to receiver task if woken
+    }
+
+    if (sr & UART_SR_ORE) {            // overrun error
+        (void)UART1->DR;               // clear by reading DR
+        rx_overrun_count++;
+    }
+}
+```
+
+---
+
+## Sharing Data Between ISR and Task
+
+**Option 1: Queue (preferred for data)**
+```c
+// ISR produces, task consumes
+QueueHandle_t xRxQueue = xQueueCreate(64, sizeof(uint8_t));
+
+// ISR
+void UART1_IRQHandler(void) {
+    uint8_t b = UART1->DR;
+    BaseType_t xWoken = pdFALSE;
+    xQueueSendFromISR(xRxQueue, &b, &xWoken);
+    portYIELD_FROM_ISR(xWoken);
+}
+
+// Task
+void vRxTask(void* p) {
+    uint8_t b;
+    for (;;) {
+        xQueueReceive(xRxQueue, &b, portMAX_DELAY);
+        process_byte(b);
+    }
+}
+```
+
+**Option 2: Binary semaphore (preferred for events)**
+```c
+SemaphoreHandle_t xDataReadySem = xSemaphoreCreateBinary();
+
+void SENSOR_IRQHandler(void) {
+    BaseType_t xWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xDataReadySem, &xWoken);
+    portYIELD_FROM_ISR(xWoken);
+}
+
+void vSensorTask(void* p) {
+    for (;;) {
+        xSemaphoreTake(xDataReadySem, portMAX_DELAY);
+        read_and_process_sensor();
+    }
+}
+```
+
+**Option 3: Shared variable with critical section (simple flags only)**
+```c
+// Only acceptable for a single bool/word updated atomically
+volatile bool g_sensor_triggered = false;
+
+void SENSOR_IRQHandler(void) {
+    g_sensor_triggered = true;
+    // No barrier needed on Cortex-M for single-word writes (naturally atomic)
+}
+
+void vPollTask(void* p) {
+    for (;;) {
+        if (g_sensor_triggered) {
+            taskENTER_CRITICAL();
+            g_sensor_triggered = false;
+            taskEXIT_CRITICAL();
+            handle_trigger();
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+```
+
+---
+
+## Interrupt Priority on Cortex-M
+
+ARM Cortex-M has a nested vectored interrupt controller (NVIC). Lower numeric priority = higher urgency.
+
+```c
+// Configure interrupt priority
+NVIC_SetPriority(UART1_IRQn, 5);   // mid priority
+NVIC_EnableIRQ(UART1_IRQn);
+
+// FreeRTOS on Cortex-M: ISRs that use FreeRTOS API must have priority
+// NUMERICALLY >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
+// (i.e., lower urgency than the kernel's own interrupt)
+// Typically: kernel = priority 5, your ISRs = priority 5–15
+```
+
+**Critical rule:** Any ISR that calls a `...FromISR()` FreeRTOS function must be at or below `configMAX_SYSCALL_INTERRUPT_PRIORITY`. ISRs at higher priority (lower number) must not call any FreeRTOS API.
+
+---
+
+## Deferred Interrupt Processing
+
+For ISRs that need significant processing, use the deferred interrupt pattern — do minimal work in the ISR, hand off to a high-priority task:
+
+```c
+// Task dedicated to processing DMA completion
+void vDMAProcessTask(void* p) {
+    for (;;) {
+        // Block until ISR signals completion
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        process_dma_buffer();
+    }
+}
+
+void DMA1_Stream0_IRQHandler(void) {
+    // Clear DMA interrupt flags
+    DMA1->LIFCR = DMA_LIFCR_CTCIF0;
+
+    // Notify the processing task — fastest possible IPC
+    BaseType_t xWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(dma_task_handle, &xWoken);
+    portYIELD_FROM_ISR(xWoken);
+}
+```
+
+Task notifications are the fastest IPC mechanism in FreeRTOS — no queue overhead, single 32-bit value passed directly to a task.

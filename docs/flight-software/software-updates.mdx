@@ -7,6 +7,144 @@ sidebar_position: 9
 
 # Software Updates
 
-*Full content coming soon. This page is part of the Flight Software section.*
+Once a spacecraft is on orbit, the only way to fix bugs, patch vulnerabilities, or add capabilities is through software updates uplinked from the ground. This is one of the highest-risk operations in flight software — a bad update can brick a vehicle beyond recovery.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Update Strategies
+
+| Strategy | Risk | Recovery |
+|----------|------|----------|
+| Full image replacement | High — all code changes at once | Boot to backup image |
+| Patch-only (diff) | Medium — smaller payload, precise changes | Reconstruct from base + patch |
+| In-place memory patching | Low overhead — just rewrite specific addresses | Difficult — no version tracking |
+| Loadable app modules | Low — only the changed app is replaced | Reload previous module version |
+
+NASA cFS supports **loadable table updates** and **CPU execution restart** without full system reboot. Full image updates are handled by the bootloader.
+
+---
+
+## Update Package Structure
+
+```
+Update Package
+├── Header
+│   ├── Target spacecraft ID
+│   ├── Image version
+│   ├── Base version (for delta patches)
+│   ├── Payload SHA-256 hash
+│   └── RSA-2048 signature
+├── Payload
+│   ├── [Full image OR delta patch]
+│   └── [Optional: updated parameter tables]
+└── Manifest
+    ├── File checksums
+    └── Install sequence
+```
+
+---
+
+## Upload Sequence
+
+```
+Ground prepares package → uplink in CCSDS frames → onboard receiver stores to NVRAM
+
+Verify:
+  1. Reconstruct full payload from received frames
+  2. Verify SHA-256 hash
+  3. Verify RSA signature with stored public key
+  4. If both pass: mark image as PENDING
+
+Activate:
+  Ground sends ACTIVATE command →
+    Bootloader selects PENDING image on next boot →
+    Watchdog-supervised reboot →
+    If new image boots successfully: mark as PRIMARY
+    If watchdog fires: revert to previous image
+```
+
+---
+
+## Verification Before Activation
+
+Never activate an image without verifying it first:
+
+```c
+bool verify_image(const uint8_t *image, size_t len,
+                  const uint8_t *expected_sha256,
+                  const uint8_t *rsa_sig) {
+    uint8_t actual_hash[32];
+    sha256(image, len, actual_hash);
+
+    if (memcmp(actual_hash, expected_sha256, 32) != 0) {
+        log_event(EVT_IMG_HASH_FAIL);
+        return false;
+    }
+    if (!rsa_verify(public_key, actual_hash, rsa_sig)) {
+        log_event(EVT_IMG_SIG_FAIL);
+        return false;
+    }
+    return true;
+}
+```
+
+---
+
+## Rollback Safety
+
+The update system must always preserve a known-good image:
+
+```
+Boot Slots:
+┌─────────────────┐  ┌─────────────────┐
+│  SLOT A         │  │  SLOT B         │
+│  status: ACTIVE │  │  status: BACKUP │
+│  version: 2.1.0 │  │  version: 2.0.3 │
+└─────────────────┘  └─────────────────┘
+
+On update: write to the slot that is NOT currently ACTIVE
+After verification: promote new slot to PENDING
+After successful boot: new slot becomes ACTIVE, old becomes BACKUP
+Never overwrite BACKUP until new ACTIVE is confirmed healthy
+```
+
+---
+
+## Table Updates (cFS)
+
+cFS separates **code** from **tables**. Tables (configuration data, parameter sets) can be updated without rebooting:
+
+```c
+// Ground uploads new table image
+// cFS Table Services loads and validates it:
+CFE_Status_t CFE_TBL_Load(CFE_TBL_Handle_t TblHandle,
+                           CFE_TBL_SrcEnum_t SrcType,
+                           const void *SrcDataPtr);
+
+// App gets notification and swaps to new table
+CFE_TBL_ReleaseAddress(TblHandle);
+CFE_TBL_Manage(TblHandle);     // applies pending update
+CFE_TBL_GetAddress(&TblPtr, TblHandle);
+```
+
+---
+
+## Uplink Constraints
+
+Updates are limited by the uplink data rate. On a CubeSat S-band link at 9.6 kbps with a 10-minute pass:
+
+- 9600 bits/s × 600 s = 5,760,000 bits ≈ **700 KB per pass**
+- A typical 1 MB image requires ~1.5 passes
+- Include ~20% overhead for framing and retransmissions
+
+Plan update campaigns across multiple passes with frame-level retransmission capability.
+
+---
+
+## Key References
+
+- [Boot Sequence](./boot-sequence)
+- [Flight Software Overview](./overview)
+- [Command & Telemetry](./command-telemetry)
+- [NOR Flash / Data Stores](./data-stores)
+- [Safety & Reliability Overview](../safety-reliability/overview)

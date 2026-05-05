@@ -7,6 +7,144 @@ sidebar_position: 10
 
 # Ground Interface
 
-*Full content coming soon. This page is part of the Flight Software section.*
+The ground interface defines how operators on Earth communicate with a spacecraft. It spans RF protocols, ground station hardware, mission operations software, and the procedures that govern when and how commands are sent.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## End-to-End Link
+
+```
+Operator Console
+      │ (TCP/IP, KISS, SLE)
+      ▼
+Mission Control System (MCS)
+      │ (SLE / UDP)
+      ▼
+Ground Station Antenna
+      │ (RF uplink — UHF, S-band, X-band)
+      ▼
+Spacecraft Transponder
+      │ (internal bus)
+      ▼
+Telecommand Decoder
+      │ (software bus)
+      ▼
+Flight Software Apps
+```
+
+---
+
+## RF Frequency Bands
+
+| Band | Frequency | Typical Use |
+|------|-----------|-------------|
+| UHF | 300–3000 MHz | CubeSat TT&C, LEO passes |
+| S-band | 2–4 GHz | Primary TT&C for most missions |
+| X-band | 8–12 GHz | High-rate science downlink |
+| Ka-band | 26–40 GHz | Very high rate downlink (>1 Gbps) |
+| Optical | ~1550 nm | Laser comm — emerging |
+
+---
+
+## Space Link Extension (SLE)
+
+SLE (CCSDS 911 series) is the standard protocol between ground stations and mission control. It provides:
+
+- **RAF (Return All Frames)**: forward all received TM frames to mission control
+- **RCF (Return Channel Frames)**: forward frames on a specific virtual channel
+- **CLTU (Command Link Transmission Unit)**: accept uplink commands from mission control
+
+SLE runs over TCP/IP with connection management, data delivery, and status services.
+
+---
+
+## Ground Station Pass
+
+A LEO spacecraft has line-of-sight to a ground station for only 5–15 minutes per orbit. Operations during a pass:
+
+1. **AOS (Acquisition of Signal)**: antenna locks on spacecraft, TM starts flowing
+2. **Commanding window**: ground validates link quality, then sends queued commands
+3. **Telemetry playback**: stored science data is downlinked at high rate
+4. **LOS (Loss of Signal)**: spacecraft goes below horizon
+
+```c
+// Typical pass summary telemetry
+typedef struct {
+    uint32_t pass_start_tai;
+    uint32_t pass_duration_s;
+    uint32_t bytes_downlinked;
+    uint32_t commands_received;
+    uint32_t commands_rejected;
+    int16_t  signal_strength_dbm;
+} PassSummary_t;
+```
+
+---
+
+## Uplink / Downlink Protocol Stack
+
+### Uplink
+
+```
+Operator Input
+  → Packed Command Packet (CCSDS Space Packet)
+    → CLTU (Command Link Transmission Unit)
+      → TC Transfer Frame
+        → RF Signal (modulated)
+          → Spacecraft Receiver
+```
+
+### Downlink
+
+```
+Spacecraft App TLM
+  → Space Packet
+    → TM Transfer Frame
+      → Reed-Solomon / Turbo FEC encoded
+        → RF Signal
+          → Ground Station Receiver
+            → SLE frame delivery
+              → Mission Control Display
+```
+
+---
+
+## Contact Scheduling
+
+For missions with multiple ground stations, a contact scheduling algorithm assigns passes to stations based on:
+
+- Visibility windows (computed from TLEs)
+- Priority (anomaly mode gets more contact time)
+- Data volume needed
+- Station availability
+
+```python
+# Simplified contact priority score
+def contact_priority(spacecraft_state, data_backlog_gb, hours_since_contact):
+    base = 1.0
+    if spacecraft_state == "SAFE_MODE":
+        base = 10.0
+    return base + 0.5 * data_backlog_gb + 0.3 * hours_since_contact
+```
+
+---
+
+## Commanding Procedures
+
+Every command sent to a spacecraft follows a procedure:
+
+1. **Radiator dry run**: verify command on simulator before uplinking
+2. **Command approval**: two-person rule for critical commands
+3. **Uplink**: send with sequence count and authentication
+4. **Verification**: confirm execution via telemetry within N seconds
+5. **Logging**: archive command and verification in mission database
+
+---
+
+## Key References
+
+- [Command & Telemetry](./command-telemetry)
+- [Flight Software Overview](./overview)
+- [Link Budget](../orbital-physics/link-budget)
+- [CCSDS Parser](../synthesis/ccsds-parser)
+- [Telemetry Pipeline](../synthesis/telemetry-pipeline)

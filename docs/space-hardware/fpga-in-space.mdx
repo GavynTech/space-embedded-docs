@@ -7,6 +7,137 @@ sidebar_position: 5
 
 # FPGAs in Space
 
-*Full content coming soon. This page is part of the Space Hardware section.*
+FPGAs (Field-Programmable Gate Arrays) play a central role in spacecraft — not as backup solutions, but as primary compute elements for tasks that demand deterministic timing, radiation tolerance, and reconfigurability. From image processing to protocol bridging, FPGAs handle what CPUs can't.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Why FPGAs in Space
+
+| Capability | CPU | FPGA |
+|-----------|-----|------|
+| Deterministic sub-microsecond timing | No | Yes |
+| Parallelism | Limited | Massive |
+| Reconfigurability in orbit | Software only | Full hardware reconfiguration |
+| Radiation tolerance (anti-fuse) | No | Yes (specific families) |
+| Custom interfaces (SpaceWire, MIL-1553) | With IP cores | Native |
+| Power efficiency for DSP | Moderate | Excellent |
+
+---
+
+## FPGA Technology for Space
+
+### Anti-Fuse FPGAs (Radiation-Hardened)
+
+Programmable by permanently breaking microscopic fuses — one-time programmable, immune to SEU:
+
+| Device | Vendor | Gates | Notes |
+|--------|--------|-------|-------|
+| RTAX-S | Microsemi/Actel | 1M–4M | Industry standard for space |
+| RT ProASIC3 | Microsemi | 500K–3M | Flash-based, SEU immune |
+| RHBD FPGA | BAE Systems | Various | Custom military/space |
+
+### Flash-Based FPGAs
+
+Flash configuration cells are much less SEU-sensitive than SRAM:
+
+- Microsemi ProASIC3: widely used in CubeSats
+- Tolerates moderate radiation without scrubbing
+
+### SRAM-Based FPGAs (Must Scrub)
+
+Standard Xilinx/Intel FPGAs use SRAM configuration — highly susceptible to SEUs:
+
+| Device | Notes |
+|--------|-------|
+| Xilinx Kintex | High performance, needs TMR + scrubbing |
+| Xilinx Virtex-5QV | Radiation-characterized, qualified for space |
+| Intel Stratix | Commercial-grade, used in LEO CubeSats |
+
+Configuration bits flip when hit by a particle. The fix: **configuration scrubbing** — periodically readback and rewrite the configuration memory.
+
+---
+
+## Configuration Scrubbing
+
+```vhdl
+-- Pseudo-VHDL: scrub controller logic
+process(clk)
+begin
+    if rising_edge(clk) then
+        if scrub_timer = SCRUB_INTERVAL then
+            scrub_timer <= 0;
+            initiate_icap_readback();     -- Read config from ICAP port
+            compare_with_golden_image();  -- Check for upsets
+            if mismatch_detected then
+                rewrite_frame(bad_frame_addr); -- Correct the upset
+            end if;
+        else
+            scrub_timer <= scrub_timer + 1;
+        end if;
+    end if;
+end process;
+```
+
+Scrub rate must be fast enough that MTTF of accumulating two upsets in the same word exceeds mission lifetime.
+
+---
+
+## Triple Modular Redundancy (TMR) in FPGAs
+
+For critical logic inside the FPGA, implement TMR at the register level:
+
+```vhdl
+-- TMR voter for a single-bit register
+signal q_a, q_b, q_c : std_logic;
+signal q_voted : std_logic;
+
+-- Each register driven by identical logic
+q_voted <= (q_a AND q_b) OR (q_b AND q_c) OR (q_a AND q_c);
+```
+
+Tools like Xilinx's TMRTool or Actel's Libero can automate TMR insertion across an entire design.
+
+---
+
+## Common FPGA Applications in Spacecraft
+
+| Application | Why FPGA |
+|------------|---------|
+| SpaceWire router | Deterministic 100–400 Mbps routing |
+| Image processor | Parallel pixel pipelines, no CPU bottleneck |
+| Reed-Solomon encoder/decoder | Hardware FEC in real-time |
+| MIL-STD-1553 interface | Precise timing requirements |
+| PWM / thruster control | Sub-microsecond timing |
+| Memory controller with ECC | Custom DRAM interface + scrubbing |
+| ADC/DAC interface | High-speed sample capture |
+
+---
+
+## Partial Reconfiguration
+
+Modern FPGAs (Xilinx UltraScale, Virtex) support partial reconfiguration — updating a region of the FPGA fabric while the rest continues operating. In space, this enables:
+
+- Uploading new signal processing algorithms on orbit
+- Switching between operating modes without full reconfiguration
+- Repairing a radiation-damaged module by reconfiguring just that region
+
+---
+
+## Development Tools
+
+| Vendor | Synthesis | Simulation |
+|--------|-----------|-----------|
+| Xilinx (AMD) | Vivado | Vivado Simulator / ModelSim |
+| Intel (Altera) | Quartus | ModelSim |
+| Microsemi (Actel) | Libero SoC | ModelSim |
+| Open Source | GHDL + Yosys | GHDL + GTKWave |
+
+---
+
+## Key References
+
+- [Space Hardware Overview](./overview)
+- [Radiation Effects](./radiation-effects)
+- [Radiation Hardening](./radiation-hardening)
+- [ECC Memory Scrubber](../synthesis/ecc-memory-scrubber)
+- [TMR Voter](../synthesis/tmr-voter)

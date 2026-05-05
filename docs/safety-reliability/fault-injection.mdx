@@ -7,6 +7,158 @@ sidebar_position: 8
 
 # Fault Injection
 
-*Full content coming soon. This page is part of the Safety & Reliability section.*
+Fault injection deliberately introduces errors into a system to test whether the fault detection, isolation, and recovery (FDIR) mechanisms work correctly. You cannot trust your error handling until you've proven it actually handles errors — and you can't wait until orbit to find out.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Why Fault Injection
+
+Testing nominal cases verifies the happy path. Fault injection verifies the system behaves correctly when things go wrong:
+
+- Does the watchdog actually recover from a stuck task?
+- Does the backup sensor activate when primary fails?
+- Does safe mode actually trigger when the battery drops below threshold?
+- Does the memory scrubber correct single-bit errors before they accumulate?
+
+Without fault injection, error-handling code is untested code.
+
+---
+
+## Fault Injection Categories
+
+| Level | Method | What It Tests |
+|-------|--------|---------------|
+| Software | Insert fault calls in code | SW error detection, recovery |
+| Hardware | Inject signals via test fixture | HW fault handling |
+| Radiation | Heavy ion beam, proton beam | SEU response in silicon |
+| Power | Remove/reduce power rails | Undervoltage protection |
+| Communication | Corrupt/drop packets | Protocol error handling |
+| Physical | Component removal | Redundancy switchover |
+
+---
+
+## Software Fault Injection
+
+Build fault injection points into the production code, enabled only in test builds:
+
+```c
+// Fault injection framework
+#ifdef FAULT_INJECTION_ENABLED
+
+typedef enum {
+    FI_NONE = 0,
+    FI_SENSOR_RETURN_NAN,
+    FI_STORAGE_READ_CORRUPT,
+    FI_WATCHDOG_KICK_FAIL,
+    FI_ALLOC_RETURN_NULL,
+    FI_COUNT
+} FaultId_t;
+
+static FaultId_t active_fault = FI_NONE;
+static uint32_t  fault_trigger_count = 0;
+static uint32_t  call_count[FI_COUNT] = {0};
+
+bool fi_should_trigger(FaultId_t id) {
+    call_count[id]++;
+    return (active_fault == id) && (call_count[id] == fault_trigger_count);
+}
+
+#define INJECT_FAULT(id, fault_expr, normal_expr) \
+    (fi_should_trigger(id) ? (fault_expr) : (normal_expr))
+
+#else
+#define INJECT_FAULT(id, fault_expr, normal_expr) (normal_expr)
+#endif
+
+// Usage in production code:
+float read_temperature(void) {
+    float raw = adc_read(TEMP_CHANNEL);
+    return INJECT_FAULT(FI_SENSOR_RETURN_NAN, NAN, raw * TEMP_SCALE + TEMP_OFFSET);
+}
+```
+
+---
+
+## Radiation Fault Injection
+
+Simulates single-event upsets (SEUs) in software to test memory scrubber and ECC response:
+
+```c
+// Inject a single-bit flip at a random address in SRAM
+void fi_inject_seu(void) {
+    uint32_t addr_offset = rand() % SRAM_SIZE;
+    uint8_t  bit_pos = rand() % 8;
+
+    volatile uint8_t *addr = (volatile uint8_t *)(SRAM_BASE + addr_offset);
+    *addr ^= (1u << bit_pos);   // Flip one bit
+
+    log_event(EVT_FI_SEU_INJECTED, (uint32_t)addr, bit_pos);
+}
+
+// Test: inject SEU, run scrubber, verify correction
+void test_ecc_seu_correction(void) {
+    uint8_t original = *(volatile uint8_t*)TEST_ADDR;
+    fi_inject_seu_at(TEST_ADDR, bit_pos=3);
+
+    scrubber_run_one_pass();
+
+    uint8_t recovered = *(volatile uint8_t*)TEST_ADDR;
+    assert(recovered == original);
+    assert(scrubber_corrections_count() == 1);
+}
+```
+
+---
+
+## Hardware Fault Injection
+
+Physical fault injection methods:
+
+| Method | What | Risk |
+|--------|------|------|
+| Power cycling | Remove and restore power | None — reversible |
+| Pin forcing | Drive signal to unexpected state | Hardware damage if done wrong |
+| I2C/SPI corruption | Corrupt bus traffic with interposer | None — software recovers |
+| Heavy ion testing | Beam at TAMU, TRIUMF, or HIMAC | Component may latch-up |
+| Laser SEU | Focus laser on die | Non-destructive if used carefully |
+
+---
+
+## FDIR Scenario Matrix
+
+Document every fault and its expected response:
+
+| Fault | Detection Method | Response | Expected Recovery Time |
+|-------|-----------------|----------|----------------------|
+| OBC CPU halt | Watchdog timer fires | Hard reset | < 30 seconds |
+| Memory ECC double-bit | ECC interrupt | Log + flag | Immediate |
+| Battery undervoltage | Voltage monitor < 6.8V | Shed non-essential loads | < 1 second |
+| Star tracker timeout | 5-second absence of valid data | Switch to sun sensor attitude | < 10 seconds |
+| ADCS loop runaway | Attitude error > 30° for 60s | Safe mode entry | < 60 seconds |
+| Comms timeout | 7 days without ground contact | Enter beacon mode | Continuous |
+
+---
+
+## Test Campaign Structure
+
+A fault injection campaign:
+
+1. **Baseline**: record nominal performance metrics
+2. **Inject**: activate specific fault
+3. **Observe**: confirm fault is detected within expected time
+4. **Recover**: confirm recovery completes correctly
+5. **Verify**: confirm no residual state corruption
+6. **Document**: record results in test report
+
+All 100+ FDIR scenarios should be exercised before CDR (Critical Design Review).
+
+---
+
+## Key References
+
+- [Safety & Reliability Overview](./overview)
+- [Fault Management](../flight-software/fault-management)
+- [Redundancy Patterns](./redundancy-patterns)
+- [ECC Memory Scrubber](../synthesis/ecc-memory-scrubber)
+- [Testing Strategy](./testing-strategy)
+- [Watchdog Patterns](../rtos/watchdog-patterns)

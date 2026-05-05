@@ -7,6 +7,118 @@ sidebar_position: 3
 
 # VxWorks
 
-*Full content coming soon. This page is part of the RTOS section.*
+VxWorks is the dominant commercial RTOS in avionics and space. It has been on the Mars Pathfinder, Spirit, Opportunity, Curiosity, and Perseverance rovers, the Deep Impact comet mission, and hundreds of commercial aircraft. If you work on a legacy or high-reliability space program, you will encounter it.
 
-See the [overview](./overview) for what this page covers.
+It is made by Wind River Systems and is commercial — licenses are expensive, which is why newer small satellite programs favor FreeRTOS or RTEMS.
+
+---
+
+## Architecture
+
+VxWorks is a monolithic RTOS with POSIX compliance and a rich set of optional components. The kernel provides:
+
+- Preemptive priority-based scheduling (256 priority levels)
+- Round-robin scheduling at equal priorities
+- POSIX threads (pthreads) API
+- Message queues, semaphores, mutexes with priority inheritance
+- Timers, watchdogs
+- Memory protection (MPU/MMU support)
+
+```c
+// VxWorks task creation
+#include <taskLib.h>
+#include <semLib.h>
+
+TASK_ID adcs_task_id;
+
+int adcs_task_entry(int arg1, int arg2, ...) {
+    // task runs here
+    for (;;) {
+        // do work
+        taskDelay(10);   // delay 10 ticks (usually 1ms/tick = 10ms)
+    }
+    return 0;
+}
+
+void init_tasks(void) {
+    adcs_task_id = taskSpawn(
+        "tADCS",          // name
+        50,               // priority (0=highest, 255=lowest in VxWorks)
+        0,                // options
+        4096,             // stack size
+        adcs_task_entry,  // entry function
+        0,0,0,0,0,0,0,0,0,0  // up to 10 int args
+    );
+}
+```
+
+---
+
+## VxWorks IPC
+
+```c
+// Message queue
+MSG_Q_ID msgQId = msgQCreate(
+    10,            // max messages
+    sizeof(Cmd_t), // max message size
+    MSG_Q_FIFO     // ordering
+);
+
+// Send (from task)
+Cmd_t cmd = {CMD_DETUMBLE, 0};
+msgQSend(msgQId, (char*)&cmd, sizeof(cmd), WAIT_FOREVER, MSG_PRI_NORMAL);
+
+// Receive (blocks until message available)
+Cmd_t rx_cmd;
+msgQReceive(msgQId, (char*)&rx_cmd, sizeof(rx_cmd), WAIT_FOREVER);
+
+// Binary semaphore
+SEM_ID sem = semBCreate(SEM_Q_PRIORITY, SEM_EMPTY);
+semGive(sem);   // signal
+semTake(sem, WAIT_FOREVER);   // wait
+
+// Mutex with priority inheritance
+SEM_ID mutex = semMCreate(SEM_Q_PRIORITY | SEM_INVERSION_SAFE);
+semTake(mutex, WAIT_FOREVER);
+// critical section
+semGive(mutex);
+```
+
+The `SEM_INVERSION_SAFE` flag enables priority inheritance — **critical for any mutex shared between different priority tasks**. The Mars Pathfinder incident (1997) was caused by a mutex without this flag. See [Scheduling](./scheduling).
+
+---
+
+## VxWorks 653 — Avionics Partition Model
+
+VxWorks 653 is the variant used for DO-178C certifiable avionics. It implements the ARINC 653 standard: the system is divided into **partitions** (like processes), each with guaranteed CPU time and memory isolation.
+
+```
+┌─────────────────────────────────────┐
+│         VxWorks 653 Kernel          │
+├──────────┬──────────┬───────────────┤
+│Partition │Partition │  Partition    │
+│  ADCS    │  COMMS   │  FAULT_MGMT  │
+│ 30% CPU  │ 20% CPU  │   10% CPU    │
+│ 64KB RAM │128KB RAM │   32KB RAM   │
+└──────────┴──────────┴───────────────┘
+```
+
+Partitions cannot interfere with each other — a bug in the COMMS partition cannot corrupt ADCS memory. Communication between partitions goes through well-defined channels (sampling/queuing ports).
+
+This model is required for DAL A/B avionics software because it provides the spatial and temporal isolation needed to contain faults.
+
+---
+
+## Key Differences from FreeRTOS
+
+| Feature | VxWorks | FreeRTOS |
+|---|---|---|
+| Priority range | 0–255 (0 = highest) | 0–N (N = highest) |
+| MMU/MPU support | Full | Limited |
+| POSIX compliance | Yes | Partial (via add-on) |
+| Certification | DO-178C certifiable | Not certified |
+| License | Commercial (~$10k+) | MIT (free) |
+| Footprint | Larger (~1MB+) | Small (~12KB) |
+| Shell/debugging | Full-featured shell | Minimal |
+
+The priority convention is inverted from FreeRTOS — in VxWorks, priority 0 is highest. This trips up engineers switching between the two.

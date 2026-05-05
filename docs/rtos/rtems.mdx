@@ -7,6 +7,143 @@ sidebar_position: 4
 
 # RTEMS
 
-*Full content coming soon. This page is part of the RTOS section.*
+RTEMS (Real-Time Executive for Multiprocessor Systems) is NASA's open-source RTOS. It has flown on the Mars Pathfinder, Spirit, Opportunity, and Curiosity rovers, Deep Space 1, and dozens of other missions. It is the RTOS underlying NASA's cFS framework.
 
-See the [overview](./overview) for what this page covers.
+It is free, POSIX-compatible, and supports the SPARC/LEON3 architecture common in ESA and NASA flight computers.
+
+---
+
+## Why RTEMS for Space
+
+- **Heritage:** Flown on more NASA missions than any other open-source RTOS
+- **POSIX API:** The same threading and IPC code runs on RTEMS and Linux — enabling desktop testing
+- **SPARC/LEON3 support:** First-class BSPs for the processors that fly
+- **cFS integration:** NASA's Core Flight System targets RTEMS as its primary RTOS
+- **Free:** No licensing costs, source available for inspection and certification
+
+---
+
+## Task Creation (Classic API)
+
+RTEMS provides two APIs: Classic (RTEMS-native) and POSIX (portable). For flight software, the Classic API is common; for portable code, use POSIX.
+
+```c
+#include <rtems.h>
+
+// Classic API task
+rtems_task adcs_task(rtems_task_argument arg) {
+    for (;;) {
+        // do work
+        rtems_task_wake_after(RTEMS_MILLISECONDS_TO_TICKS(10));
+    }
+    rtems_task_delete(RTEMS_SELF);
+}
+
+void init(void) {
+    rtems_id task_id;
+    rtems_task_create(
+        rtems_build_name('A','D','C','S'),   // 4-char name
+        50,                                  // priority (1=highest in RTEMS)
+        RTEMS_MINIMUM_STACK_SIZE * 2,        // stack size
+        RTEMS_PREEMPT | RTEMS_NO_TIMESLICE,  // mode
+        RTEMS_DEFAULT_ATTRIBUTES,            // attributes
+        &task_id
+    );
+    rtems_task_start(task_id, adcs_task, 0);
+}
+```
+
+---
+
+## POSIX API (Portable)
+
+```c
+#include <pthread.h>
+#include <semaphore.h>
+
+void* adcs_thread(void* arg) {
+    struct timespec period = {0, 10000000};  // 10ms
+    for (;;) {
+        run_adcs_cycle();
+        nanosleep(&period, NULL);
+    }
+    return NULL;
+}
+
+// Create thread
+pthread_t tid;
+pthread_attr_t attr;
+pthread_attr_init(&attr);
+pthread_attr_setstacksize(&attr, 16384);
+
+struct sched_param sched = {.sched_priority = 50};
+pthread_attr_setschedparam(&attr, &sched);
+pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+
+pthread_create(&tid, &attr, adcs_thread, NULL);
+```
+
+This same code compiles and runs on Linux for testing — no modification needed.
+
+---
+
+## RTEMS with NASA cFS
+
+NASA cFS uses RTEMS through the OSAL (OS Abstraction Layer). You never call RTEMS directly in a cFS app — you call `OS_TaskCreate()`, `OS_QueueCreate()`, etc.
+
+```c
+// cFS / OSAL — runs identically on RTEMS and Linux
+OS_task_prop_t task_prop;
+osal_id_t task_id;
+
+OS_TaskCreate(
+    &task_id,
+    "ADCS_CTRL",
+    ADCS_ControlTask,
+    NULL,             // stack pointer (NULL = auto-allocate)
+    16384,            // stack size
+    50,               // priority
+    0                 // flags
+);
+```
+
+---
+
+## Building for LEON3/SPARC with RTEMS
+
+```bash
+# Install RTEMS 6 toolchain for SPARC
+# From RTEMS Source Builder (RSB):
+cd rtems-source-builder/rtems
+../source-builder/sb-set-builder --prefix=/opt/rtems/6 6/rtems-sparc
+
+# Build RTEMS kernel for LEON3
+cd rtems
+./waf configure \
+    --prefix=/opt/rtems/6 \
+    --rtems-bsps=sparc/leon3
+./waf
+
+# Build application
+sparc-rtems6-gcc \
+    -mcpu=leon3 \
+    -qrtems \
+    -Bsp_start \
+    main.c -o app.exe
+```
+
+---
+
+## RTEMS vs FreeRTOS for Space
+
+| | RTEMS | FreeRTOS |
+|---|---|---|
+| NASA heritage | Extensive (rovers, deep space) | Growing (CubeSats) |
+| POSIX support | Full | Via add-on only |
+| SPARC/LEON3 | First-class BSP | Limited |
+| ARM Cortex-M | Good BSPs | Dominant choice |
+| cFS integration | Native target | Supported |
+| Certification | Can be certified | Not certified |
+| Community | Smaller, aerospace-focused | Huge, broad embedded |
+
+For a mission using cFS on a LEON3-based OBC, RTEMS is the natural choice. For a CubeSat with a Cortex-M4 OBC and no cFS dependency, FreeRTOS is simpler.

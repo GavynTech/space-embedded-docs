@@ -7,6 +7,177 @@ sidebar_position: 7
 
 # Testing Strategy
 
-*Full content coming soon. This page is part of the Safety & Reliability section.*
+You cannot test a spacecraft in every environment it will encounter — vacuum, radiation, microgravity, extreme thermal cycles. Testing strategy for space software is about maximizing defect detection before launch within the constraint that post-launch repair is impossible.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Test Pyramid for Space Software
+
+```
+                    ▲
+                   / \
+                  / FT \      ← Flight (limited telemetry)
+                 /───────\
+                / ATLO   \    ← Assembly, Test, and Launch Ops
+               /───────────\
+              / System / SIL \  ← Hardware-in-loop / Software-in-loop
+             /─────────────────\
+            / Integration Test  \
+           /───────────────────────\
+          /    Unit Tests           \
+         /─────────────────────────────\
+        /       Static Analysis         \
+       ▼─────────────────────────────────▼
+```
+
+---
+
+## Unit Testing
+
+Test individual functions and modules in isolation. Key principles for embedded space software:
+
+```c
+// Example: test orbital period calculation
+void test_orbital_period(void) {
+    // ISS altitude: 400 km
+    double a = 6371e3 + 400e3;  // meters
+    double T = orbital_period_s(a);
+
+    // Expected: ~5555 seconds (92.6 minutes)
+    assert(fabs(T - 5555.0) < 5.0);  // within 5 seconds
+}
+```
+
+**Hardware abstraction**: use HAL (Hardware Abstraction Layer) to run unit tests on host PC, not target hardware:
+
+```c
+// Target: real hardware
+void hal_gpio_write(uint8_t pin, bool val) {
+    *((volatile uint8_t*)GPIO_BASE + pin) = val;
+}
+
+// Host test: stub
+static bool gpio_state[MAX_PINS];
+void hal_gpio_write(uint8_t pin, bool val) {
+    gpio_state[pin] = val;
+}
+```
+
+---
+
+## Software-in-the-Loop (SIL)
+
+Run flight software in a simulation environment. No hardware required. Used to:
+
+- Test with simulated sensor inputs (attitude, position, power)
+- Verify state machine transitions without physical hardware
+- Run thousands of orbital scenarios automatically
+
+```python
+# Python SIL harness
+import subprocess, socket
+
+# Launch flight software binary
+proc = subprocess.Popen(['./fsw_sim'], ...)
+
+# Inject telemetry
+sim.inject_sensor(sun_vector=[0.7, 0.0, 0.714])
+sim.inject_sensor(gyro_rate=[0.001, -0.0005, 0.0])
+
+# Wait and read output
+time.sleep(1.0)
+telemetry = sim.read_tlm_packet('ADCS_HK')
+assert telemetry['attitude_error_deg'] < 0.5
+```
+
+---
+
+## Hardware-in-the-Loop (HIL)
+
+Real flight hardware (OBC, EPS, sensors) connected to a real-time simulation of the spacecraft dynamics and environment:
+
+```
+  Flight OBC ─────────────┐
+  Real EPS     ◄──────────┤  Real-time
+  Real ADCS board          │  Simulation
+                           │  (spacecraft dynamics,
+  Sensor stimulators ──────┘   environment models)
+```
+
+HIL finds timing-sensitive bugs that SIL misses. Required before critical mission phases.
+
+---
+
+## Structural Coverage (MC/DC)
+
+For DO-178C DAL A, every decision and condition must independently affect the outcome. Use a coverage tool:
+
+```bash
+# Build with coverage instrumentation
+arm-none-eabi-gcc -O0 --coverage -fprofile-arcs -ftest-coverage ...
+
+# Run tests
+./run_tests.sh
+
+# Generate report
+gcov *.c
+lcov --capture --directory . --output coverage.info
+genhtml coverage.info --output-directory html/
+```
+
+Target: 100% statement, branch, and MC/DC coverage for safety-critical modules.
+
+---
+
+## Environmental Stress Testing
+
+| Test | Conditions | Purpose |
+|------|-----------|---------|
+| Thermal cycling | −40°C to +85°C, 8–12 cycles | Thermal fatigue |
+| Thermal vacuum | < 10⁻⁵ Torr, hot/cold soak | Vacuum outgassing, thermal balance |
+| Vibration | Sine sweep + random per launch spec | Launch survival |
+| Shock | Pyroshock events | Separation device shock |
+| EMC/EMI | Radiated emissions + susceptibility | RF interference |
+| Radiation | Total ionizing dose, SEE testing | On-orbit behavior |
+
+---
+
+## Regression Testing
+
+Every software change must re-run the full test suite. Automated:
+
+```yaml
+# CI pipeline
+on: [push]
+jobs:
+  test:
+    steps:
+      - run: make unit_test
+      - run: make sil_test
+      - run: make misra_check
+      - run: make static_analysis
+      - run: make coverage_report
+        fail-if: coverage < 100
+```
+
+---
+
+## Test Documentation (DO-178C)
+
+Required test artifacts:
+
+| Document | Contents |
+|---------|---------|
+| Software Test Plan (STP) | Scope, approach, schedule |
+| Software Test Specification (STS) | Test cases, inputs, expected outputs |
+| Software Test Report (STR) | Actual results, pass/fail, anomalies |
+
+---
+
+## Key References
+
+- [Safety & Reliability Overview](./overview)
+- [DO-178C](./do-178c)
+- [Static Analysis](./static-analysis)
+- [Fault Injection](./fault-injection)
+- [Testing Embedded Systems](../embedded-cpp/testing-embedded)

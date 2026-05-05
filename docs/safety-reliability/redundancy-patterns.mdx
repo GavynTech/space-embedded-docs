@@ -7,6 +7,158 @@ sidebar_position: 6
 
 # Redundancy Patterns
 
-*Full content coming soon. This page is part of the Safety & Reliability section.*
+Redundancy is the spacecraft's primary defense against hardware failure. In space there is no technician, no field repair — everything that can fail must have a backup, or the mission ends. The challenge is providing redundancy without doubling mass, power, and cost.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Redundancy Taxonomy
+
+| Type | Description | Example |
+|------|-------------|---------|
+| Hardware redundancy | Duplicate hardware paths | Two OBCs, dual power rails |
+| Software redundancy | Multiple software implementations | N-version programming |
+| Time redundancy | Retry on transient failure | Repeat computation, compare results |
+| Information redundancy | Error-correcting codes | EDAC SRAM, Reed-Solomon |
+| Functional redundancy | Different means to same end | Star tracker fails → use sun sensor |
+
+---
+
+## Triple Modular Redundancy (TMR)
+
+Three identical units voting on output. Any single unit can fail while the system continues correctly:
+
+```
+Unit A ─┐
+Unit B ─┼─▶ Voter ─▶ Output
+Unit C ─┘
+```
+
+```c
+// Software TMR voter for 32-bit result
+uint32_t tmr_vote(uint32_t a, uint32_t b, uint32_t c) {
+    // Majority vote — correct if at most one unit is wrong
+    if (a == b) return a;
+    if (a == c) return a;
+    if (b == c) return b;
+    // All three disagree — return 0, set error flag
+    set_fault(FAULT_TMR_NO_CONSENSUS);
+    return 0;
+}
+```
+
+See [TMR Voter](../synthesis/tmr-voter) for a full implementation with fault logging.
+
+**TMR trade-offs**:
+- Mass/power × 3 for protected function
+- A voter itself can fail — it must be simpler and more reliable than the voted units
+- Three units all failing the same way (common-cause failure) defeats TMR
+
+---
+
+## Dual Redundancy with Cross-Strapping
+
+Two strings (A and B), each capable of running the mission. Cross-strapping allows either OBC to control either set of hardware:
+
+```
+     String A              String B
+┌──────────────┐      ┌──────────────┐
+│ OBC-A        │      │ OBC-B        │
+│ EPS-A        │      │ EPS-B        │
+│ COMMS-A      │      │ COMMS-B      │
+└──────┬───────┘      └──────┬───────┘
+       │   Cross-strap bus   │
+       └─────────────────────┘
+```
+
+Normal operation: OBC-A is primary. On failure: OBC-B takes over, can access all hardware.
+
+---
+
+## Cold Spare vs. Hot Spare
+
+| Mode | Power State | Switchover | Recovery Time |
+|------|-------------|-----------|--------------|
+| Hot standby | Powered on, synchronized | Automatic, < 1s | Near-zero |
+| Warm standby | Powered on, not synchronized | Manual or automated, ~10s | Seconds |
+| Cold spare | Powered off | Manual (ground command) | Minutes |
+
+Cold spares save power at the cost of switchover time. Hot standby costs double the power for zero interruption.
+
+---
+
+## Software Redundancy: N-Version Programming
+
+Multiple independent implementations of critical algorithms, written by different teams, voted:
+
+```cpp
+// N-version voting for attitude determination
+Quaternion q_a = attitude_alg_a(sensors);  // Team A implementation
+Quaternion q_b = attitude_alg_b(sensors);  // Team B implementation
+
+// Vote: if within tolerance, use average; if not, flag disagreement
+double angle_diff = quaternion_angle_between(q_a, q_b);
+if (angle_diff < VOTE_TOLERANCE_RAD) {
+    return quaternion_slerp(q_a, q_b, 0.5); // average
+} else {
+    flag_fault(FAULT_ATTITUDE_DISAGREE);
+    return q_a;  // use primary, flag for investigation
+}
+```
+
+Expensive to develop but eliminates common-cause software failures.
+
+---
+
+## Watchdog Redundancy
+
+A watchdog timer is hardware redundancy for software correctness:
+
+- Independent hardware timer
+- Software must kick it within deadline or it fires
+- On fire: hard reset of processor
+- Hierarchical watchdogs: software watchdog (fast) + hardware watchdog (failsafe)
+
+```c
+// Software watchdog: each critical task checks in
+void task_critical_a(void) {
+    while (1) {
+        do_work();
+        watchdog_checkin(WD_TASK_CRITICAL_A);  // must happen each cycle
+        OS_TaskDelay(TASK_PERIOD_MS);
+    }
+}
+
+// Hardware watchdog kicked only if all software watchdogs healthy
+void watchdog_monitor(void) {
+    while (1) {
+        if (all_tasks_checked_in()) {
+            hardware_watchdog_kick();
+        }
+        OS_TaskDelay(WD_MONITOR_PERIOD_MS);
+    }
+}
+```
+
+---
+
+## Failure Mode Analysis
+
+Before designing redundancy, understand what can fail and how:
+
+| Failure Mode | Detection | Mitigation |
+|-------------|-----------|-----------|
+| OBC hard fault | Watchdog fires | Reboot to backup image |
+| Memory corruption | ECC error | Scrub and correct |
+| Sensor stuck value | Sanity check (no change > N samples) | Switch to backup sensor |
+| Power rail undervolt | Voltage monitor | Shed loads |
+| Communication timeout | Timer on expected receipt | Switch to backup link |
+
+---
+
+## Key References
+
+- [Safety & Reliability Overview](./overview)
+- [TMR Voter](../synthesis/tmr-voter)
+- [ECC Memory Scrubber](../synthesis/ecc-memory-scrubber)
+- [Fault Management](../flight-software/fault-management)
+- [Watchdog Patterns](../rtos/watchdog-patterns)

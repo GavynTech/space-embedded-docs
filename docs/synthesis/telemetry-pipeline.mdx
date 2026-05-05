@@ -7,6 +7,237 @@ sidebar_position: 9
 
 # Telemetry Pipeline
 
-*Full content coming soon. This page is part of the Synthesis section.*
+The telemetry pipeline is the end-to-end path that takes raw data from flight software applications, packages it into CCSDS frames, and delivers it to the downlink radio for transmission to the ground. This page implements the complete pipeline in embedded C.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Pipeline Architecture
+
+```
+App 1 Telemetry Packet ─┐
+App 2 Telemetry Packet ─┤
+App 3 Telemetry Packet ─┤
+        ...              ├─▶ TLM Server ─▶ Frame Builder ─▶ Encoder ─▶ Radio TX
+App N Telemetry Packet ─┘         │
+                                  ▼
+                             Recorder (NAND Flash)
+                             (for playback later)
+```
+
+---
+
+## Packet Rate Management
+
+Not all apps downlink at the same rate. The TLM server manages rates per message:
+
+```c
+// tlm_server.h
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+#include "ccsds.h"
+
+#define TLM_MAX_SUBSCRIPTIONS 64u
+#define TLM_FRAME_DATA_SIZE   1115u  // CCSDS TM frame data field (RS(255,223) compatible)
+
+typedef struct {
+    uint16_t  apid;
+    uint16_t  period_ticks;   // downlink every N scheduler ticks
+    uint16_t  tick_counter;
+    bool      enabled;
+    uint16_t  packet_size;    // bytes including CCSDS header
+    void     *source_ptr;     // pointer to app's TLM data structure
+} TlmSubscription_t;
+
+typedef struct {
+    TlmSubscription_t subs[TLM_MAX_SUBSCRIPTIONS];
+    uint16_t          sub_count;
+    uint8_t           frame_buf[TLM_FRAME_DATA_SIZE];
+    uint16_t          frame_fill;
+    uint32_t          frame_count;
+    uint32_t          seq_count[2048];  // per-APID sequence counter
+} TlmServer_t;
+```
+
+---
+
+## Subscription Registration
+
+```c
+// tlm_server.c
+#include "tlm_server.h"
+#include "event_log.h"
+#include "radio_api.h"
+
+int tlm_subscribe(TlmServer_t *srv, uint16_t apid,
+                  void *src, uint16_t size, uint16_t period_ticks) {
+    if (srv->sub_count >= TLM_MAX_SUBSCRIPTIONS) return -1;
+
+    TlmSubscription_t *s = &srv->subs[srv->sub_count++];
+    s->apid         = apid;
+    s->source_ptr   = src;
+    s->packet_size  = size;
+    s->period_ticks = period_ticks;
+    s->tick_counter = 0;
+    s->enabled      = true;
+    return 0;
+}
+```
+
+---
+
+## CCSDS Header Population
+
+```c
+static void tlm_build_packet(TlmServer_t *srv, TlmSubscription_t *sub,
+                              uint8_t *out_buf, uint16_t out_size,
+                              uint32_t t_tai) {
+    CcsdsTmHdr_t *hdr = (CcsdsTmHdr_t *)out_buf;
+
+    // Primary header
+    uint16_t stream_id = 0x0800u | sub->apid;  // version=0, type=TM, shdr=1
+    hdr->pri.stream_id = __builtin_bswap16(stream_id);
+
+    uint16_t seq = (uint16_t)(srv->seq_count[sub->apid]++ & 0x3FFFu)
+                   | CCSDS_SEQ_STANDALONE;
+    hdr->pri.sequence = __builtin_bswap16(seq);
+
+    uint16_t user_data_len = sub->packet_size - sizeof(CcsdsPriHdr_t);
+    hdr->pri.length = __builtin_bswap16((uint16_t)(user_data_len - 1u));
+
+    // Secondary header — timestamp
+    hdr->sec.seconds    = __builtin_bswap32(t_tai);
+    hdr->sec.subseconds = 0;
+
+    // Copy app data into payload
+    uint8_t *payload = out_buf + sizeof(CcsdsTmHdr_t);
+    uint16_t payload_len = sub->packet_size - sizeof(CcsdsTmHdr_t);
+    memcpy(payload, sub->source_ptr, payload_len);
+}
+```
+
+---
+
+## Frame Builder
+
+Pack CCSDS packets into a CCSDS TM transfer frame:
+
+```c
+typedef struct __attribute__((packed)) {
+    uint16_t master_channel_id;    // SCID[10] + VCID[3] + OCF_flag[1]
+    uint8_t  master_frame_count;
+    uint8_t  virtual_frame_count;
+    uint16_t data_field_status;    // first_header_pointer etc.
+} TmFrameHdr_t;
+
+static void tlm_flush_frame(TlmServer_t *srv) {
+    if (srv->frame_fill == 0) return;
+
+    uint8_t frame[TM_FRAME_SIZE];
+    TmFrameHdr_t *fhdr = (TmFrameHdr_t *)frame;
+
+    // Fill frame header
+    fhdr->master_channel_id  = __builtin_bswap16(0x1234u); // example SCID
+    fhdr->master_frame_count = (uint8_t)(srv->frame_count & 0xFFu);
+    fhdr->virtual_frame_count = 0;
+    fhdr->data_field_status  = __builtin_bswap16(0x0800u); // no secondary hdr
+
+    // Copy data field
+    memcpy(frame + sizeof(TmFrameHdr_t), srv->frame_buf, srv->frame_fill);
+
+    // Zero pad remainder
+    if (srv->frame_fill < TLM_FRAME_DATA_SIZE) {
+        memset(frame + sizeof(TmFrameHdr_t) + srv->frame_fill,
+               0,
+               TLM_FRAME_DATA_SIZE - srv->frame_fill);
+    }
+
+    // Append CRC-16
+    uint16_t crc = crc16_ccsds(frame, TM_FRAME_SIZE - 2);
+    frame[TM_FRAME_SIZE - 2] = (uint8_t)(crc >> 8);
+    frame[TM_FRAME_SIZE - 1] = (uint8_t)(crc & 0xFF);
+
+    // Send to radio and recorder
+    radio_tx_frame(frame, TM_FRAME_SIZE);
+    recorder_write(frame, TM_FRAME_SIZE);
+
+    srv->frame_fill = 0;
+    srv->frame_count++;
+}
+```
+
+---
+
+## Main TLM Server Step
+
+Called once per scheduler tick (e.g., every 100ms):
+
+```c
+void tlm_server_step(TlmServer_t *srv, uint32_t t_tai) {
+    uint8_t pkt_buf[TLM_MAX_PACKET_SIZE];
+
+    for (uint16_t i = 0; i < srv->sub_count; i++) {
+        TlmSubscription_t *s = &srv->subs[i];
+        if (!s->enabled) continue;
+
+        s->tick_counter++;
+        if (s->tick_counter < s->period_ticks) continue;
+        s->tick_counter = 0;
+
+        // Build packet
+        tlm_build_packet(srv, s, pkt_buf, sizeof(pkt_buf), t_tai);
+
+        // Pack into frame
+        if (srv->frame_fill + s->packet_size > TLM_FRAME_DATA_SIZE) {
+            tlm_flush_frame(srv);
+        }
+        memcpy(srv->frame_buf + srv->frame_fill, pkt_buf, s->packet_size);
+        srv->frame_fill += s->packet_size;
+    }
+
+    // Flush if any partial frame is aging (max 1-second hold)
+    if (srv->frame_fill > 0) {
+        tlm_flush_frame(srv);
+    }
+}
+```
+
+---
+
+## Downlink Rate Control
+
+Match output rate to the radio link capacity:
+
+```c
+// Set TLM subscription rates based on available downlink bandwidth
+void tlm_set_mode(TlmServer_t *srv, TlmMode_t mode) {
+    uint16_t hk_period, eng_period, sci_period;
+
+    switch (mode) {
+        case TLM_MODE_NOMINAL:  hk_period=10; eng_period=1;  sci_period=1;  break;
+        case TLM_MODE_SAFE:     hk_period=1;  eng_period=10; sci_period=0;  break;
+        case TLM_MODE_PLAYBACK: hk_period=100;eng_period=100;sci_period=1;  break;
+        default:                return;
+    }
+
+    for (uint16_t i = 0; i < srv->sub_count; i++) {
+        TlmSubscription_t *s = &srv->subs[i];
+        if (s->apid == APID_HK)      s->period_ticks = hk_period;
+        if (s->apid == APID_ENG)     s->period_ticks = eng_period;
+        if (s->apid == APID_SCIENCE) {
+            s->period_ticks = sci_period;
+            s->enabled = (sci_period > 0);
+        }
+    }
+}
+```
+
+---
+
+## Key References
+
+- [Command & Telemetry](../flight-software/command-telemetry)
+- [CCSDS Parser](./ccsds-parser)
+- [Ground Interface](../flight-software/ground-interface)
+- [Data Stores](../flight-software/data-stores)
+- [Synthesis Overview](./overview)

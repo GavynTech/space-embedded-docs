@@ -7,6 +7,103 @@ sidebar_position: 9
 
 # CubeSat Hardware
 
-*Full content coming soon. This page is part of the Space Hardware section.*
+CubeSats are standardized small satellites built in units (U) of 10×10×10 cm. A 1U weighs ~1.33 kg maximum. The CubeSat standard (originally from Cal Poly/Stanford, now governed by the CubeSat Design Specification) enables low-cost access to orbit using commercial off-the-shelf (COTS) and semi-custom hardware.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Form Factors
+
+| Form Factor | Dimensions | Volume | Typical Mass |
+|-------------|-----------|--------|-------------|
+| 0.5U | 10×10×5 cm | 0.5L | < 0.75 kg |
+| 1U | 10×10×10 cm | 1L | < 1.33 kg |
+| 2U | 10×10×20 cm | 2L | < 2.66 kg |
+| 3U | 10×10×30 cm | 3L | < 4.0 kg |
+| 6U | 10×20×30 cm | 6L | < 12.0 kg |
+| 12U | 20×20×30 cm | 12L | < 24.0 kg |
+
+---
+
+## Standard Subsystems
+
+### OBC (On-Board Computer)
+
+Runs flight software. Common CubeSat OBCs:
+
+| OBC | CPU | Clock | Flash | SRAM | Radiation |
+|-----|-----|-------|-------|------|-----------|
+| Gomspace NanoMind A3200 | AVR32 | 66 MHz | 32 MB | 32 MB | Commercial |
+| ISIS iOBC | ARM9 | 400 MHz | 1 GB SD | 64 MB | Commercial |
+| Endurosat OBC II | STM32H7 | 400 MHz | 4 MB | 1 MB | Commercial |
+| Xiphos Q7S | Xilinx Zynq | 667 MHz | 512 MB | 1 GB | Space-grade |
+
+### EPS (Electrical Power System)
+
+- Solar panels (deployable or body-mounted) → Battery → Power bus
+- Typical bus voltages: 3.3V, 5V, 12V unregulated
+- Battery: Li-Ion or LiPo, 20–80 Wh typical
+- Power budget per subsystem enforced by load switches
+
+### ADCS (Attitude Determination and Control)
+
+CubeSat-grade options:
+
+| Type | Accuracy | Power |
+|------|----------|-------|
+| Magnetorquers only | ±5° | < 1W |
+| Magnetorquers + momentum wheel | ±1° | 1–3W |
+| Reaction wheels + sun sensors + star tracker | < 0.1° | 3–8W |
+
+### Comms
+
+| Link | Band | Rate |
+|------|------|------|
+| UHF beacon | 435–438 MHz | 9.6–38.4 kbps |
+| UHF/VHF TT&C | 145/435 MHz | 9.6 kbps |
+| S-band downlink | 2.4 GHz | 1–100 Mbps |
+| X-band downlink | 8–10 GHz | 100 Mbps–1 Gbps |
+
+---
+
+## PC/104 and CubeSat Bus Standards
+
+Most CubeSat electronics use the **PC/104** form factor and stacking connector. Boards stack vertically with a 104-pin bus carrying:
+
+- Power rails (3.3V, 5V, 12V, unregulated battery)
+- I2C (house bus)
+- SPI
+- UART
+- GPIO
+
+Newer platforms use the **CubeSat Space Protocol (CSP)** over CAN or I2C for inter-subsystem communication.
+
+---
+
+## Separation System
+
+The CubeSat is deployed from a **P-POD (Poly Picosatellite Orbital Deployer)** or equivalent. A spring mechanism ejects the satellite when the P-POD door opens. This creates a mechanical shock event the hardware must survive.
+
+**Deployment inhibit requirement**: CubeSats must not transmit RF for at least 30 minutes after deployment (per radio regulations). A deployment switch (D-switch) enforces this in hardware.
+
+---
+
+## Design Constraints
+
+| Constraint | Typical Limit |
+|-----------|--------------|
+| Mass | Form factor maximum |
+| Power (average) | Solar input − battery margin |
+| Peak power | Battery capacity / duty cycle |
+| Volume for payload | Total − all subsystems |
+| Orbit lifetime (drag) | > 25 years post-mission deorbit required |
+| EMC | No interference with launch vehicle or co-passengers |
+
+---
+
+## Key References
+
+- [Space Hardware Overview](./overview)
+- [Microcontrollers](./microcontrollers)
+- [Radiation Effects](./radiation-effects)
+- [Power Systems](./power-systems)
+- [Sensors & Actuators](./sensors-actuators)

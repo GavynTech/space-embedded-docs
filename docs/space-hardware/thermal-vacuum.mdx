@@ -5,8 +5,137 @@ sidebar_label: Thermal Vacuum
 sidebar_position: 8
 ---
 
-# Thermal Vacuum
+# Thermal Vacuum Environment
 
-*Full content coming soon. This page is part of the Space Hardware section.*
+Space is not uniformly cold. A spacecraft in LEO cycles between +120°C in direct sunlight and -90°C in eclipse, every 95 minutes, for years. Managing temperature is a core engineering discipline — get it wrong and your battery dies, your electronics clock wrong, or your structure warps.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Thermal Environment
+
+### Heat Sources
+
+| Source | Description |
+|--------|-------------|
+| Solar radiation | 1361 W/m² (solar constant at 1 AU) |
+| Albedo (Earth reflected) | ~30% of solar, varies with cloud cover |
+| Earth IR | ~237 W/m² from Earth's thermal emission |
+| Internal dissipation | Heat from electronics, motors, batteries |
+
+### Heat Removal
+
+There is no convection in vacuum — only radiation. The Stefan-Boltzmann law governs:
+
+```
+P_radiated = ε × σ × A × T⁴
+
+where:
+  ε = emissivity (0–1)
+  σ = 5.67×10⁻⁸ W/m²·K⁴
+  A = radiating area
+  T = temperature in Kelvin
+```
+
+---
+
+## Temperature Ranges
+
+| Component | Operating Range | Survival Range |
+|-----------|----------------|----------------|
+| Li-Ion Battery | 0°C to 45°C | -20°C to 60°C |
+| Electronics (commercial) | 0°C to 70°C | -55°C to 85°C |
+| Electronics (military) | -55°C to 125°C | -65°C to 150°C |
+| Reaction wheels | -20°C to 50°C | -40°C to 60°C |
+| Propellant (hydrazine) | > 2°C | > 2°C (freezes!) |
+
+---
+
+## Passive Thermal Control
+
+### Multi-Layer Insulation (MLI)
+
+Blankets of aluminized Mylar with low-emissivity spacers. Reduces radiative heat exchange with environment by 100×. Wraps most of the spacecraft body.
+
+### Surface Coatings
+
+| Surface | α (solar absorptivity) | ε (IR emissivity) | Use |
+|---------|----------------------|--------------------|-----|
+| Polished aluminum | 0.09 | 0.03 | Minimize heat loss |
+| White paint | 0.20 | 0.90 | Radiator surface |
+| Black paint | 0.95 | 0.90 | Absorb solar heat |
+| Optical Solar Reflector (OSR) | 0.08 | 0.80 | High-power radiators |
+
+### Radiators
+
+Panels coated with high-emissivity paint, pointed away from the Sun, that dump waste heat to deep space.
+
+### Heat Pipes
+
+Passive two-phase heat transport — liquid evaporates at hot end, condenses at cold end, liquid returns via capillary wick. Copper-water for most applications; aluminum-ammonia for cryogenic or wide temperature ranges.
+
+---
+
+## Active Thermal Control
+
+### Heaters
+
+Resistive heaters keep cold components warm during eclipse. Thermostat-controlled or software-controlled:
+
+```c
+void thermal_heater_control(void) {
+    float temp = read_thermistor(BATT_THERMISTOR);
+    if (temp < BATT_HEATER_ON_THRESH) {
+        eps_set_load(LOAD_BATT_HEATER, true);
+    } else if (temp > BATT_HEATER_OFF_THRESH) {
+        eps_set_load(LOAD_BATT_HEATER, false);
+    }
+}
+```
+
+Heaters are the largest non-payload power consumer during eclipse in many missions.
+
+### Louvers
+
+Bimetal-actuated venetian blind louvers over radiators. Open when hot, close when cold. Entirely passive, no power required.
+
+### Thermoelectric Coolers (TECs)
+
+Peltier devices for precise thermal control of detectors. High power, used only when detector noise sensitivity demands it.
+
+---
+
+## Thermal Vacuum Testing (TVT)
+
+All spacecraft must survive thermal vacuum testing before launch:
+
+1. **Thermal Balance Test**: validate thermal model against measured temperatures in steady-state hot/cold conditions
+2. **Thermal Cycling**: cycle between hot and cold case multiple times to stress interfaces and connections
+3. **Operational TVT**: run all subsystems at temperature, verify performance
+
+Typical chamber conditions:
+- Pressure: < 10⁻⁵ Torr (< 1.3×10⁻³ Pa)
+- Hot case: +80°C environment
+- Cold case: -40°C environment
+- Cycles: 8–12 full hot/cold cycles
+
+---
+
+## Software Implications
+
+Thermal state affects software directly:
+
+- Crystal oscillators change frequency with temperature → time drift
+- Flash write speed varies ±30% across temperature range
+- Battery capacity drops at low temperature
+- Some sensors have temperature-dependent calibration
+
+Flight software must monitor thermal state and adjust timing-sensitive operations accordingly.
+
+---
+
+## Key References
+
+- [Space Hardware Overview](./overview)
+- [Power Systems](./power-systems)
+- [Radiation Effects](./radiation-effects)
+- [Health & Safety Monitoring](../flight-software/health-safety)

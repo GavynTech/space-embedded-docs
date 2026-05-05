@@ -7,6 +7,142 @@ sidebar_position: 10
 
 # Link Budget
 
-*Full content coming soon. This page is part of the Orbital Physics section.*
+A link budget is the accounting of all signal gains and losses from transmitter to receiver. If the received signal power exceeds the minimum required (Eb/N0), the link closes. If it doesn't, no data gets through.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## The Fundamental Equation
+
+```
+C/N0 = EIRP − FSPL − L_other + G/T − k
+
+where:
+  C/N0   = carrier-to-noise density [dBHz]
+  EIRP   = transmitter power + antenna gain [dBW]
+  FSPL   = free space path loss [dB]
+  L_other = other losses (atmospheric, pointing, polarization) [dB]
+  G/T    = receiver figure of merit [dB/K]
+  k      = Boltzmann's constant = −228.6 dBW/K/Hz
+```
+
+---
+
+## Key Parameters
+
+### EIRP (Effective Isotropic Radiated Power)
+
+```
+EIRP [dBW] = P_tx [dBW] + G_tx [dBi] − L_feed [dB]
+
+Example:
+  P_tx = 2W = 3 dBW
+  G_tx = 6 dBi (S-band patch antenna)
+  L_feed = 1 dB
+  EIRP = 3 + 6 − 1 = 8 dBW
+```
+
+### Free Space Path Loss
+
+```
+FSPL [dB] = 20×log10(d) + 20×log10(f) + 92.45
+
+where d is in km, f in GHz
+
+Example: 800 km altitude, S-band (2.4 GHz):
+  FSPL = 20×log10(800) + 20×log10(2.4) + 92.45
+       = 58.1 + 7.6 + 92.45 = 158.1 dB
+```
+
+### G/T (Receiver Figure of Merit)
+
+```
+G/T [dB/K] = G_rx [dBi] − 10×log10(T_sys [K])
+
+Ground station example:
+  G_rx = 40 dBi (3.7m dish at S-band)
+  T_sys = 150 K (LNA noise temperature)
+  G/T = 40 − 21.8 = 18.2 dB/K
+```
+
+---
+
+## Full Example: CubeSat S-band Downlink
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Tx power | 2W (+3 dBW) | S-band transmitter |
+| Tx antenna gain | 6 dBi | Patch, body-mounted |
+| Feed loss | 1 dB | — |
+| **EIRP** | **8 dBW** | — |
+| Frequency | 2.4 GHz | — |
+| Range | 800 km | Nadir pass |
+| Free space loss | 158.1 dB | — |
+| Atmospheric loss | 0.3 dB | Clear sky, low elevation |
+| Pointing loss | 1.5 dB | Off-axis error |
+| Polarization loss | 0.5 dB | — |
+| **Total path loss** | **160.4 dB** | — |
+| Ground antenna gain | 40 dBi | 3.7m dish |
+| System noise temp | 150 K (+21.8 dB) | — |
+| **G/T** | **18.2 dB/K** | — |
+| Boltzmann constant | −228.6 dBW/K/Hz | — |
+| **C/N0** | **134.4 dBHz** | — |
+| Required Eb/N0 | 10 dB (BPSK, BER=10⁻⁶) | — |
+| Data rate | 1 Mbps (+60 dBbps) | — |
+| Required C/N0 | 70 dBHz | — |
+| **Margin** | **64.4 dB** | Healthy link |
+
+---
+
+## Minimum Elevation Angle
+
+At low elevation angles, the signal path through the atmosphere increases and the range is longer. Most ground systems require minimum 5–10° elevation:
+
+```
+Range vs elevation:
+  90° (zenith): r = h (altitude)
+  10° elevation: r ≈ h / sin(10°) ≈ 5.8h
+  5° elevation: r ≈ h / sin(5°) ≈ 11.5h
+```
+
+---
+
+## Contact Duration
+
+For a circular LEO orbit at altitude h, maximum contact time per pass (overhead pass, 90° elevation):
+
+```python
+import math
+
+def max_contact_time(altitude_km, min_elevation_deg):
+    RE = 6371  # km
+    r = RE + altitude_km
+    half_angle = math.acos(RE * math.sin(math.pi/2 + math.radians(min_elevation_deg)) / r)
+    # Orbital period
+    mu = 3.986e5  # km³/s²
+    T = 2 * math.pi * math.sqrt(r**3 / mu)
+    return T * (2 * half_angle) / (2 * math.pi)
+
+print(f"{max_contact_time(500, 10):.0f} seconds")  # ~9 minutes
+```
+
+---
+
+## Data Volume Per Pass
+
+```
+Data Volume = Data Rate × Contact Duration × Link Availability
+
+Example:
+  1 Mbps × 540 s × 0.85 (15% overhead/margins) = 45.9 MB per pass
+```
+
+With two ground station passes per day: ~92 MB/day downlink capacity.
+
+---
+
+## Key References
+
+- [Ground Interface](../flight-software/ground-interface)
+- [Orbital Physics Overview](./overview)
+- [Keplerian Orbits](./keplerian-orbits)
+- [Command & Telemetry](../flight-software/command-telemetry)

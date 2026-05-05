@@ -7,6 +7,165 @@ sidebar_position: 8
 
 # Time Systems
 
-*Full content coming soon. This page is part of the Orbital Physics section.*
+Spacecraft systems depend on precise, unambiguous time. Commands must execute at exact instants, telemetry must be timestamped for science validity, and orbital mechanics calculations require continuous atomic time. Understanding the relationships between time scales prevents mission-critical errors.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Time Scales in Use
+
+| Scale | Description | Key Property |
+|-------|-------------|-------------|
+| UTC | Coordinated Universal Time | Civil time, includes leap seconds |
+| TAI | International Atomic Time | Uniform, no leap seconds |
+| GPS Time | GPS system time | Fixed offset from TAI |
+| TT | Terrestrial Time | Used in ephemeris calculations |
+| UT1 | Earth rotation time | Tracks actual Earth rotation |
+| MET | Mission Elapsed Time | Seconds since spacecraft epoch |
+| SCET | Spacecraft Event Time | Onboard time of event occurrence |
+
+---
+
+## TAI vs UTC
+
+TAI runs continuously at SI second rate. UTC is kept within 0.9 seconds of UT1 (Earth rotation) by inserting **leap seconds**:
+
+```
+UTC = TAI − (leap second offset)
+
+As of 2024: TAI − UTC = 37 seconds
+GPS Time = TAI − 19 seconds (fixed, no leap seconds)
+```
+
+**Critical**: flight software using UTC for timing will have discontinuities at leap second insertion. Use TAI for all internal timing.
+
+---
+
+## GPS Time
+
+GPS receivers output GPS Time (continuous, no leap seconds) plus a week number:
+
+```
+GPS Time = 0 at Jan 6, 1980 00:00:00 UTC
+Current GPS Time ≈ week 2000+, seconds of week
+
+Convert to TAI:
+  TAI = GPS Time + 19 seconds
+
+Convert to UTC:
+  UTC = GPS Time + 19 − current_leap_seconds
+```
+
+---
+
+## Mission Elapsed Time (MET)
+
+The simplest onboard time scale: seconds since a defined mission epoch. Common epoch choices:
+
+- Launch time
+- First command received
+- Jan 1, 2000 00:00:00 TAI (J2000)
+
+```c
+typedef struct {
+    uint32_t seconds;        // full seconds since epoch
+    uint16_t subseconds;     // 1/65536 second resolution
+} MET_t;
+
+// Increment MET at each hardware timer tick
+void timer_isr(void) {
+    met.subseconds++;
+    if (met.subseconds == 0) {  // overflow at 65536
+        met.seconds++;
+    }
+}
+```
+
+---
+
+## Julian Date (JD)
+
+Used in orbital mechanics and ephemeris calculations. JD 0 = noon, Jan 1, 4713 BC.
+
+```cpp
+// Convert calendar date to Julian Date
+double calendar_to_jd(int year, int month, int day,
+                       int hour, int min, double sec) {
+    // Standard algorithm
+    int a = (14 - month) / 12;
+    int y = year + 4800 - a;
+    int m = month + 12*a - 3;
+    double jdn = day + (153*m + 2)/5 + 365*y + y/4 - y/100 + y/400 - 32045;
+    return jdn + (hour - 12.0)/24.0 + min/1440.0 + sec/86400.0;
+}
+
+// J2000 epoch = JD 2451545.0 = Jan 1.5, 2000 TT
+double j2000_seconds(double jd_tt) {
+    return (jd_tt - 2451545.0) * 86400.0;
+}
+```
+
+---
+
+## Time Correlation and Ground Synchronization
+
+Onboard clocks drift (~seconds/day for TCXO oscillators). Ground stations synchronize spacecraft time via:
+
+1. **Uplink ranging**: measure round-trip light time, compute one-way propagation delay
+2. **Time correlation packets**: ground sends its UTC, spacecraft records MET at receipt
+3. **PPS (pulse per second)**: GPS receiver outputs 1-PPS signal synchronized to GPS Time
+
+```c
+// Store time correlation in NVRAM
+typedef struct {
+    uint32_t met_seconds;
+    uint32_t met_subseconds;
+    uint32_t utc_seconds;        // Unix timestamp
+    uint32_t ground_correlation_id;
+} TimeCorrelation_t;
+```
+
+---
+
+## Onboard Clock Accuracy
+
+| Clock Type | Stability | Drift per Day |
+|-----------|-----------|--------------|
+| RC oscillator | ±2% | Hours/day |
+| Crystal (XTAL) | ±50 ppm | ~4 seconds |
+| TCXO (temp compensated) | ±0.5 ppm | ~43 ms |
+| OCXO (oven controlled) | ±0.01 ppm | ~0.9 ms |
+| GPS-disciplined | ~10 ns | < 1 µs |
+
+Most spacecraft use TCXO for onboard timing with regular GPS synchronization.
+
+---
+
+## Leap Second Handling
+
+Flight software must be leap-second aware when converting between TAI and UTC:
+
+```c
+// Leap second table (add new entries as IERS announces them)
+static const struct { uint32_t tai_seconds; int32_t delta; } leap_table[] = {
+    { 1483228836, 37 }, // Jan 1, 2017 - current as of 2024
+    // ...
+};
+
+int32_t get_leap_seconds(uint32_t tai) {
+    for (int i = ARRAY_SIZE(leap_table)-1; i >= 0; i--) {
+        if (tai >= leap_table[i].tai_seconds)
+            return leap_table[i].delta;
+    }
+    return 0;
+}
+```
+
+---
+
+## Key References
+
+- [Orbital Physics Overview](./overview)
+- [Keplerian Orbits](./keplerian-orbits)
+- [Orbit Propagation](./orbit-propagation)
+- [Relativistic Effects](./relativistic-effects)
+- [Telemetry Pipeline](../synthesis/telemetry-pipeline)

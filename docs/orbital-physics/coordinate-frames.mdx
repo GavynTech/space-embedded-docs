@@ -7,6 +7,162 @@ sidebar_position: 4
 
 # Coordinate Frames
 
-*Full content coming soon. This page is part of the Orbital Physics section.*
+Coordinate frames define where things are and how they're oriented. In spacecraft engineering, you routinely transform between body frame (attached to the vehicle), orbital frame (relative to the orbit), and inertial frames (fixed to distant stars). Getting these wrong is catastrophic — the Beagle 2 lander failure and multiple rocket failures trace to frame errors.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Reference Frame Hierarchy
+
+```
+ECI (Inertial)
+   │
+   ├── ECEF (Earth-fixed)
+   │       │
+   │       └── NED / ENU (local geographic)
+   │
+   └── Orbital Frame (RSW / LVLH)
+           │
+           └── Body Frame (spacecraft-fixed)
+```
+
+---
+
+## Earth-Centered Inertial (ECI)
+
+The standard inertial reference frame for spacecraft:
+
+- **Origin**: Earth's center of mass
+- **X-axis**: Vernal equinox direction (to Sun at spring equinox)
+- **Z-axis**: Earth's north pole (celestial north)
+- **Y-axis**: Completes right-hand system
+
+Does **not** rotate with Earth. Positions expressed in ECI are relative to distant stars, not Earth's surface.
+
+**Used for**: orbital mechanics, attitude determination relative to stars, SGP4 propagation output.
+
+---
+
+## Earth-Centered Earth-Fixed (ECEF)
+
+- Same origin as ECI
+- **Rotates with Earth** (one revolution per sidereal day)
+- X-axis: Greenwich meridian / equator intersection
+- Z-axis: North pole
+
+Transformation from ECI to ECEF requires the **Greenwich Sidereal Time (GST)**:
+
+```cpp
+// Simplified ECI → ECEF rotation
+Eigen::Matrix3d eci_to_ecef(double gst_rad) {
+    double c = std::cos(gst_rad);
+    double s = std::sin(gst_rad);
+    Eigen::Matrix3d R;
+    R << c,  s, 0,
+        -s,  c, 0,
+         0,  0, 1;
+    return R;
+}
+```
+
+**Used for**: ground station contact windows, ground track computation, GPS position output.
+
+---
+
+## Orbital Frame (RSW / LVLH)
+
+Local Vertical Local Horizontal — the natural frame for relative motion and attitude control:
+
+- **R (Radial)**: pointing from Earth center to spacecraft
+- **S (Along-track)**: in direction of velocity (for circular orbits)
+- **W (Cross-track)**: completes right-hand system (perpendicular to orbit plane)
+
+Also called LVLH (Local Vertical Local Horizontal) or Hill frame.
+
+```cpp
+// Compute RSW unit vectors from ECI state
+void compute_rsw(const Eigen::Vector3d &pos_eci,
+                 const Eigen::Vector3d &vel_eci,
+                 Eigen::Vector3d &r_hat,
+                 Eigen::Vector3d &s_hat,
+                 Eigen::Vector3d &w_hat) {
+    r_hat = pos_eci.normalized();
+    w_hat = pos_eci.cross(vel_eci).normalized();
+    s_hat = w_hat.cross(r_hat);
+}
+```
+
+**Used for**: attitude control (e.g., nadir pointing = body Z aligned with -R), formation flying, rendezvous.
+
+---
+
+## Body Frame
+
+Fixed to the spacecraft. Defined by the physical structure:
+
+- **+Z**: typically nadir-pointing (toward Earth) for Earth observation missions
+- **+X**: typically in the flight direction
+- **+Y**: completes right-hand system
+
+The attitude of the spacecraft is the rotation from inertial to body frame, represented as a quaternion or rotation matrix.
+
+---
+
+## Rotation Representations
+
+### Rotation Matrix (DCM)
+
+A 3×3 orthonormal matrix. Exact, no singularities, but 9 values for 3 DOF:
+
+```cpp
+// Apply rotation: transform vector from frame A to frame B
+Eigen::Vector3d v_B = R_A_to_B * v_A;
+```
+
+### Quaternion
+
+4-component representation. No singularities, compact, efficient to compose:
+
+```cpp
+struct Quaternion {
+    double w, x, y, z; // scalar-first convention
+};
+
+// Rotate vector by quaternion
+Eigen::Vector3d rotate(const Quaternion &q, const Eigen::Vector3d &v) {
+    Eigen::Quaterniond eq(q.w, q.x, q.y, q.z);
+    return eq * v;
+}
+```
+
+### Euler Angles
+
+Human-readable but suffer from gimbal lock:
+
+| Convention | Sequence | Use |
+|-----------|---------|-----|
+| 3-2-1 (ZYX) | Yaw, Pitch, Roll | Aerospace standard |
+| 3-1-3 | RAAN, i, AoP | Orbital elements |
+| 3-2-3 | — | Euler symmetric |
+
+---
+
+## Common Transformations
+
+| From | To | Method |
+|------|----|--------|
+| ECI | ECEF | Rotate by GST angle |
+| ECEF | Geodetic (lat/lon/alt) | Iterative WGS84 inversion |
+| ECI | RSW | From position/velocity vectors |
+| RSW | Body | Multiply by attitude matrix |
+| Quaternion | DCM | Standard formula |
+| Euler (ZYX) | Quaternion | Standard formula |
+
+---
+
+## Key References
+
+- [Attitude Representation](./attitude-representation)
+- [Orbital Physics Overview](./overview)
+- [Keplerian Orbits](./keplerian-orbits)
+- [ADCS Software](./adcs-software)
+- [Attitude Control Loop](../synthesis/attitude-control-loop)

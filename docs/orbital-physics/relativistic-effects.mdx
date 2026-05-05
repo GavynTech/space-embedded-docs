@@ -5,8 +5,152 @@ sidebar_label: Relativistic Effects
 sidebar_position: 9
 ---
 
-# Relativistic Effects
+# Relativistic Effects in Spacecraft Systems
 
-*Full content coming soon. This page is part of the Orbital Physics section.*
+General and special relativity are not theoretical curiosities in space — they are measurable, operationally significant effects that must be modeled in any precision timing or navigation system. GPS satellites would give wrong positions within hours if relativity corrections were disabled.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Why Relativity Matters
+
+| Effect | Magnitude (GPS satellite) | Impact |
+|--------|--------------------------|--------|
+| Special relativity (time dilation) | −7.2 µs/day | Clocks run slower at speed |
+| General relativity (gravitational blueshift) | +45.9 µs/day | Clocks run faster at altitude |
+| Net effect | **+38.4 µs/day** | ~10 km/day position error if uncorrected |
+
+---
+
+## Special Relativity: Time Dilation
+
+A clock moving at velocity v relative to an observer runs slow:
+
+```
+Δt_moving = Δt_stationary × sqrt(1 − v²/c²)
+          ≈ Δt_stationary × (1 − v²/(2c²))   for v << c
+
+Fractional frequency shift: Δf/f = −v²/(2c²)
+```
+
+For a GPS satellite (v ≈ 3.87 km/s):
+
+```
+Δf/f = −(3870)² / (2 × (3×10⁸)²) = −8.35×10⁻¹¹
+     → −7.2 µs/day
+```
+
+---
+
+## General Relativity: Gravitational Time Dilation
+
+Clocks in weaker gravitational fields (higher altitude) run faster:
+
+```
+Δt_high = Δt_low × sqrt(1 − 2GM/(rc²))⁻¹
+        ≈ Δt_low × (1 + GM/(rc²))    for weak field
+
+Fractional shift: Δf/f = GM/c² × (1/r_low − 1/r_high)
+```
+
+For GPS (altitude 20,200 km vs Earth surface):
+
+```
+Δf/f = 3.986×10¹⁴ / (9×10¹⁶) × (1/6.371×10⁶ − 1/2.656×10⁷)
+     = +5.28×10⁻¹⁰ → +45.6 µs/day
+```
+
+---
+
+## Sagnac Effect
+
+Earth's rotation causes a path-length asymmetry for signals traveling east vs west. The Sagnac correction for a signal from point A to point B on a rotating Earth:
+
+```
+Δt_sagnac = 2Ω × A_enclosed / c²
+
+where:
+  Ω = Earth's rotation rate (7.292×10⁻⁵ rad/s)
+  A_enclosed = area enclosed by signal path and Earth's axis
+```
+
+For cross-continental GPS ranging: correction up to ~200 ns.
+
+---
+
+## GPS Relativistic Corrections
+
+GPS satellite clocks are pre-adjusted at manufacture to compensate for the net +38.4 µs/day relativistic drift:
+
+```
+Factory offset: −4.4647×10⁻¹⁰ (frequency slowed by this fraction)
+```
+
+An additional **satellite clock correction** accounts for orbital eccentricity (the clock rate changes as altitude varies around an elliptical orbit):
+
+```
+Δt_eccentric = −2 × sqrt(μ × a) × e × sin(E) / c²
+
+where:
+  a = semi-major axis
+  e = eccentricity
+  E = eccentric anomaly
+```
+
+---
+
+## Relativistic Orbit Propagation
+
+For precision orbit determination, the equations of motion include post-Newtonian corrections:
+
+```
+a_relativity = (μ/r³) × {
+    [(4μ/r − v²) × r̂ + 4(r̂·v̂)v]   (Schwarzschild/geodetic)
+  + 2J_rot × (v × r̂/r)               (frame-dragging / Lense-Thirring)
+}
+
+where:
+  J_rot = Earth's angular momentum
+```
+
+These corrections matter for:
+- GRACE gravity mission (centimeter-level orbit accuracy)
+- GNSS orbit determination
+- Relativistic geodesy
+
+---
+
+## Shapiro Delay
+
+Radio signals traveling through a gravitational field experience a delay (the Shapiro delay) even beyond geometric path length:
+
+```
+Δt_Shapiro = (2μ/c³) × ln((r_a + r_b + d) / (r_a + r_b − d))
+
+where:
+  r_a, r_b = distances of transmitter/receiver from Sun
+  d = distance between transmitter and receiver
+```
+
+For deep space missions, Shapiro delay can be 100+ microseconds when the signal path passes near the Sun.
+
+---
+
+## Practical Impact Summary
+
+| Mission Type | Dominant Effect | Correction Required |
+|-------------|----------------|-------------------|
+| LEO (ISS, CubeSats) | Negligible for most purposes | Only for precision ranging |
+| GPS/GNSS | Special + General + Sagnac | Factory + polynomial + ephemeris |
+| Deep space | Shapiro delay | DSN ranging model |
+| Relativistic geodesy | All effects | Full PPN model |
+| Pulsar timing | All + pulsar proper motion | Full GR |
+
+---
+
+## Key References
+
+- [Time Systems](./time-systems)
+- [Orbit Propagation](./orbit-propagation)
+- [Keplerian Orbits](./keplerian-orbits)
+- [Link Budget](./link-budget)
+- [Orbital Physics Overview](./overview)

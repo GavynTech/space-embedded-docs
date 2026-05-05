@@ -5,8 +5,127 @@ sidebar_label: DO-178C
 sidebar_position: 2
 ---
 
-# DO-178C
+# DO-178C: Software Considerations in Airborne Systems
 
-*Full content coming soon. This page is part of the Safety & Reliability section.*
+DO-178C (RTCA/DO-178C, "Software Considerations in Airborne Systems and Equipment Certification") is the primary software safety standard for civil aviation. While formally an aviation standard, it is widely applied in spacecraft software — particularly for crewed missions and launch vehicles — because no equivalent space-specific standard has comparable rigor.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Design Assurance Levels
+
+DO-178C defines five levels based on the failure condition severity:
+
+| Level | Failure Condition | Probability | Examples |
+|-------|------------------|-------------|---------|
+| A | Catastrophic (death/loss of vehicle) | < 10⁻⁹/hr | Flight control, primary propulsion |
+| B | Hazardous (serious injury, major damage) | < 10⁻⁷/hr | Backup systems |
+| C | Major (significant workload increase) | < 10⁻⁵/hr | Non-safety-critical avionics |
+| D | Minor (slight increase in workload) | < 10⁻³/hr | Convenience features |
+| E | No safety effect | No limit | Ground support software |
+
+Spacecraft flight software typically targets DAL A or B for safety-critical functions.
+
+---
+
+## Planning Process
+
+DO-178C requires documented plans approved before development:
+
+| Plan | Contents |
+|------|---------|
+| Plan for Software Aspects of Certification (PSAC) | How software will meet certification objectives |
+| Software Development Plan (SDP) | Methods, tools, environments |
+| Software Verification Plan (SVP) | Test methods, coverage criteria |
+| Software Configuration Management Plan (SCMP) | Baseline control, change tracking |
+| Software Quality Assurance Plan (SQAP) | Process audits, non-conformance |
+
+---
+
+## Life Cycle Objectives
+
+### Software Requirements
+
+- System requirements → software high-level requirements (HLRs) → software low-level requirements (LLRs)
+- Requirements must be traceable top-down and bottom-up
+- No derived requirements without safety analysis
+
+### Software Design
+
+- Architecture and detailed design derived from LLRs
+- No dead code, no deactivated code without justification
+- Data flow and control flow analysis
+
+### Coding Standards
+
+- MISRA C (for C code) or similar language standards enforced
+- Coding rules selected based on DAL level
+
+See [MISRA-C](../embedded-cpp/misra-c) for rule details.
+
+### Verification
+
+| Activity | DAL A | DAL B | DAL C |
+|----------|-------|-------|-------|
+| Statement coverage | 100% | 100% | 100% |
+| Decision coverage | 100% | 100% | — |
+| Modified Condition/Decision (MC/DC) | 100% | — | — |
+| Review of test cases | Yes | Yes | Yes |
+| Independence for testing | Required | Required | — |
+
+**MC/DC** (Modified Condition/Decision Coverage) is the most demanding:
+
+```c
+// Example: must test all combinations where each condition
+// independently affects the outcome
+if (A && (B || C)) {  // must test all 4 independent condition changes
+    do_something();
+}
+```
+
+---
+
+## Tool Qualification
+
+Any software tool that automates a DO-178C activity must be qualified as a Software Development Tool (SDT) or Software Verification Tool (SVT):
+
+| Tool Type | Risk | Qualification |
+|-----------|------|---------------|
+| Compiler | High (could corrupt code) | Qualify or verify output |
+| Static analyzer | Medium | Verify output |
+| Coverage tool | Medium | Calibrate against known inputs |
+| Test harness | Medium | Demonstrate it finds defects |
+
+---
+
+## Configuration Management
+
+At DAL A/B, the exact bit-pattern of flight software must be controlled:
+
+- Every source file under baseline control
+- Problem reports for every defect, including analysis of safety impact
+- Build reproducibility: given the same inputs, produce identical output
+- Load verification: confirm flight software matches certified baseline before flight
+
+---
+
+## Traceability Matrix
+
+A requirements traceability matrix (RTM) maps every:
+
+- HLR → LLR
+- LLR → Code
+- Code → Test case
+- Test case → HLR
+
+Unmapped requirements or untested code are certification findings.
+
+---
+
+## Key References
+
+- [Safety & Reliability Overview](./overview)
+- [ECSS Standards](./ecss-standards)
+- [Static Analysis](./static-analysis)
+- [Testing Strategy](./testing-strategy)
+- [MISRA-C](../embedded-cpp/misra-c)
+- [Formal Verification](./formal-verification)

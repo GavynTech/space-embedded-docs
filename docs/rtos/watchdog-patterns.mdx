@@ -7,6 +7,138 @@ sidebar_position: 9
 
 # Watchdog Patterns
 
-*Full content coming soon. This page is part of the RTOS section.*
+A watchdog timer is a hardware counter that resets the processor if not "kicked" (reloaded) within a specified interval. It is the fundamental last-resort recovery mechanism for embedded software. If the code deadlocks, crashes, or enters an infinite loop, the watchdog fires and resets the system to a known state.
 
-See the [overview](./overview) for what this page covers.
+On a spacecraft where manual intervention is impossible, the watchdog is not optional.
+
+---
+
+## Hardware Watchdog
+
+Most microcontrollers have an independent watchdog timer (IWDG on STM32, WDT on most ARM cores). It runs on its own clock, independent of the CPU. Even if the main clock fails, the watchdog continues.
+
+```c
+// STM32 IWDG — 4 second timeout
+void watchdog_init(void) {
+    IWDG->KR  = 0xCCCC;   // start watchdog
+    IWDG->KR  = 0x5555;   // enable register access
+    IWDG->PR  = 0x04;     // prescaler /64 (LSI ~32kHz → 500Hz)
+    IWDG->RLR = 2000;     // reload: 2000 / 500Hz = 4 seconds
+    IWDG->KR  = 0xAAAA;   // reload counter (kick)
+}
+
+void watchdog_kick(void) {
+    IWDG->KR = 0xAAAA;    // must be called within 4 seconds
+}
+```
+
+Once started, the IWDG cannot be stopped in software (by design). It will reset the processor regardless.
+
+---
+
+## Software Watchdog — Multi-Level Monitoring
+
+A hardware watchdog can only verify that the watchdog kick task ran. A software watchdog can verify that *all* critical tasks ran:
+
+```c
+// Each critical task registers with the software watchdog
+#define SW_WDT_ADCS       0
+#define SW_WDT_FDIR       1
+#define SW_WDT_COMMS      2
+#define SW_WDT_NUM_TASKS  3
+
+// Timeout in ms for each task
+static const uint32_t SW_WDT_TIMEOUT_MS[SW_WDT_NUM_TASKS] = {
+    [SW_WDT_ADCS]  = 200,    // ADCS runs at 10Hz = 100ms — allow 200ms
+    [SW_WDT_FDIR]  = 500,
+    [SW_WDT_COMMS] = 2000,
+};
+
+static uint32_t sw_wdt_last_kick_ms[SW_WDT_NUM_TASKS];
+static bool     sw_wdt_healthy[SW_WDT_NUM_TASKS];
+
+// Called by each task at the end of each cycle
+void sw_wdt_kick(uint8_t task_id) {
+    sw_wdt_last_kick_ms[task_id] = get_time_ms();
+}
+
+// Monitor task — runs at high priority
+void vSoftwareWatchdog(void* p) {
+    for (;;) {
+        uint32_t now = get_time_ms();
+        bool all_healthy = true;
+
+        for (int i = 0; i < SW_WDT_NUM_TASKS; i++) {
+            uint32_t elapsed = now - sw_wdt_last_kick_ms[i];
+            sw_wdt_healthy[i] = (elapsed < SW_WDT_TIMEOUT_MS[i]);
+
+            if (!sw_wdt_healthy[i]) {
+                log_event(EVENT_SW_WDT_TIMEOUT, i, elapsed);
+                fdir_report_anomaly(ANOMALY_TASK_TIMEOUT, i);
+                all_healthy = false;
+            }
+        }
+
+        if (all_healthy) {
+            // Only kick hardware watchdog if ALL tasks are healthy
+            watchdog_kick();
+        }
+        // If not all healthy, hardware WDT will expire → system reset
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+```
+
+This pattern means a single stuck task brings down the entire system via watchdog reset — which is the correct behavior. A partial system in an unknown state is more dangerous than a clean reset to safe mode.
+
+---
+
+## Windowed Watchdog
+
+Some safety-critical systems use a **windowed watchdog** — the kick must happen within a specific time window, not just before timeout. Kicking too early is also an error (it would indicate the code is running too fast, implying a skipped computation).
+
+```c
+// Windowed WDT: kick must happen between 50% and 100% of timeout
+// Only available on some MCUs (STM32 WWDG, TI Hercules)
+
+void wwdg_init(void) {
+    WWDG->CFR  = (1 << 9) | 0x4A;  // window = 0x4A (~50% of 0x7F)
+    WWDG->CR   = (1 << 7) | 0x7F;  // enable, counter = 0x7F (max)
+}
+
+// Kick must be called after WWDG counter drops below window value (0x4A)
+// and before counter reaches 0x3F (underflow → reset)
+void wwdg_kick(void) {
+    WWDG->CR = (1 << 7) | 0x7F;    // reload counter
+}
+```
+
+---
+
+## Watchdog Kick Task Design
+
+The watchdog kick task must be designed so it can only run if the system is genuinely healthy:
+
+```c
+// WRONG — watchdog always kicks regardless of system health
+void vWatchdogTask(void* p) {
+    for (;;) {
+        watchdog_kick();         // this defeats the purpose
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+// CORRECT — gated on all critical tasks reporting healthy
+void vWatchdogTask(void* p) {
+    for (;;) {
+        if (sw_wdt_all_healthy()) {
+            watchdog_kick();
+        }
+        // If not healthy: don't kick → hardware WDT fires → reset
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+```
+
+The watchdog task itself must have a defined maximum blocking time — if it gets stuck, the hardware watchdog must still fire.

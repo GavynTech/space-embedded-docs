@@ -7,6 +7,159 @@ sidebar_position: 9
 
 # Code Review Process
 
-*Full content coming soon. This page is part of the Safety & Reliability section.*
+In space software, code review is not a courtesy — it is a safety-critical process. DO-178C and ECSS-E-ST-40C mandate peer review with documented outcomes. A defect found in review costs 10× less than one found in integration and 100× less than one found in flight.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Review Types
+
+| Review | Formality | Participants | When |
+|--------|----------|-------------|------|
+| Informal review | Low | Author + 1 peer | Pull request / daily work |
+| Technical review | Medium | Team + lead | Per feature / module |
+| Inspection | High | Trained inspectors + independent | Before milestone gate |
+| Formal code audit | Highest | Independent team | Certification deliverable |
+
+DO-178C DAL A/B requires **formal inspection** with independence — the reviewer may not be the author.
+
+---
+
+## What to Review
+
+### Requirements Compliance
+
+- Does the code implement the stated LLR (low-level requirement)?
+- Is every requirement traceable to code?
+- Is there code with no corresponding requirement (undefined behavior)?
+
+### MISRA-C / Coding Standard Compliance
+
+- Check violations not caught by static analysis tools
+- Verify suppressions (deviations) are justified
+- Review use of language features prohibited by standard
+
+### Logic Correctness
+
+```c
+// Review flag: off-by-one
+for (int i = 0; i <= MAX_COUNT; i++) {  // should be < MAX_COUNT
+    arr[i] = value;  // writes arr[MAX_COUNT] — out of bounds
+}
+
+// Review flag: wrong comparison
+if (errno = SUCCESS) {  // BUG: assignment, not comparison
+    process();
+}
+
+// Review flag: integer promotion surprise
+uint8_t a = 200, b = 100;
+if (a + b > 255) {  // Promoted to int — always true, dead code
+    handle_overflow();
+}
+```
+
+### Safety-Critical Patterns
+
+- Verify watchdog kick happens unconditionally on all code paths
+- Verify shared resource access is properly protected (mutex, disable interrupt)
+- Verify error return codes from all function calls are checked
+- Verify no dynamic memory allocation (`malloc/free`) in flight code
+
+---
+
+## Checklist Template (Space Software)
+
+**Requirements Traceability**
+- [ ] Every function header includes the LLR ID it implements
+- [ ] No unreferenced requirements
+- [ ] No unrequired code paths
+
+**Safety**
+- [ ] No dynamic memory allocation
+- [ ] No recursion
+- [ ] No use of `setjmp/longjmp`
+- [ ] All loops have bounded iteration count
+- [ ] Watchdog kick on every code path of critical tasks
+
+**Error Handling**
+- [ ] All system calls checked for error return
+- [ ] Error counters incremented on failures
+- [ ] Event messages sent for anomalies
+- [ ] No silent error swallowing
+
+**Data Integrity**
+- [ ] Shared variables protected by mutex or critical section
+- [ ] Volatile declared for all hardware register pointers
+- [ ] Fixed-size types (`uint32_t`, not `int`) used for interface data
+
+**Coding Standard**
+- [ ] MISRA-C violations documented and justified
+- [ ] No compiler warnings with `-Wall -Wextra -Werror`
+
+---
+
+## Review Record
+
+Maintain a formal record for each review:
+
+```
+Review Record: orbit_propagator.c
+  Date: 2024-03-15
+  Author: J. Smith
+  Reviewer: A. Jones (independent)
+  Standard: MISRA-C 2012, DO-178C DAL B
+
+  Findings:
+    1. [DEFECT] Line 142: loop bound not provably finite — array index not validated
+       Disposition: FIX REQUIRED before re-review
+    2. [OBSERVATION] Line 89: magic number 86400.0 should be named constant
+       Disposition: AUTHOR DISCRETION — recommend fix
+    3. [DEVIATION] Line 203: Rule 14.4 deviation for pointer validity check
+       Justification: Pattern approved per dev plan section 4.2
+       Disposition: ACCEPTED
+
+  Result: RE-REVIEW REQUIRED (1 defect open)
+  Re-review date: 2024-03-20
+  Final result: APPROVED
+```
+
+---
+
+## Independence Requirements
+
+At DO-178C DAL A:
+
+- **Verifier independence**: test cases created by someone other than the code author
+- **Review independence**: reviewer cannot be author of reviewed artifact
+- **Organizational independence**: for safety-critical items, reviewer from different organizational unit
+
+At DAL B:
+
+- Independence required for verification activities
+- Same-team peer review acceptable for design reviews
+
+---
+
+## Metrics and Tracking
+
+Track review effectiveness:
+
+| Metric | Target |
+|--------|--------|
+| Review rate (SLOC/hour) | < 200 SLOC/hr for inspection |
+| Defect density found in review | Track trend; > 0.5/KSLOC is healthy |
+| Defect escape rate (found post-review) | < 10% of total defects |
+| Re-review rate | < 20% of reviews require re-review |
+
+Low defect density found in review + high defect escape rate = review was not effective.
+
+---
+
+## Key References
+
+- [Safety & Reliability Overview](./overview)
+- [DO-178C](./do-178c)
+- [ECSS Standards](./ecss-standards)
+- [Static Analysis](./static-analysis)
+- [Testing Strategy](./testing-strategy)
+- [MISRA-C](../embedded-cpp/misra-c)

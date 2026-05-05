@@ -1,12 +1,132 @@
 ---
 id: timing-analysis
-title: Timing Analysis
+title: Timing Analysis & WCET
 sidebar_label: Timing Analysis
 sidebar_position: 8
 ---
 
-# Timing Analysis
+# Timing Analysis & WCET
 
-*Full content coming soon. This page is part of the RTOS section.*
+Worst-Case Execution Time (WCET) analysis answers the question: what is the maximum time any function or task can take to execute? Without knowing WCET, you cannot guarantee that tasks meet their deadlines.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Why WCET Matters
+
+In a hard real-time system, average execution time is irrelevant. If the ADCS control loop runs in 2ms on average but takes 50ms once every 10 minutes, the spacecraft may tumble during that 50ms spike.
+
+Sources of worst-case timing variability in embedded code:
+- Cache misses (L1/L2 miss penalties)
+- Branch mispredictions
+- Memory wait states
+- DMA bus contention
+- Interrupt latency
+- Loop bounds (worst-case iteration count)
+
+---
+
+## Measurement-Based WCET
+
+The simplest approach: measure execution time across many iterations and take the maximum, adding safety margin.
+
+```c
+// Timing using hardware cycle counter (ARM DWT)
+void dwt_init(void) {
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL   |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+uint32_t dwt_cycles(void) {
+    return DWT->CYCCNT;
+}
+
+// Measure a function
+uint32_t max_cycles = 0;
+
+for (int i = 0; i < 10000; i++) {
+    setup_worst_case_inputs(&inputs[i]);
+    uint32_t t0 = dwt_cycles();
+    run_control_loop(&inputs[i]);
+    uint32_t elapsed = dwt_cycles() - t0;
+    if (elapsed > max_cycles) max_cycles = elapsed;
+}
+
+float wcet_ms = (float)max_cycles / SystemCoreClock * 1000.0f;
+printf("WCET: %.3f ms (%u cycles)\n", wcet_ms, max_cycles);
+```
+
+**Add margin:** measured WCET × 1.5–2.0 as your timing budget. Measurement-based analysis misses untested paths.
+
+---
+
+## Stack Usage Analysis
+
+Each FreeRTOS task needs a stack. The stack must be large enough for the deepest call chain plus interrupt nesting overhead.
+
+```bash
+# Compile with -fstack-usage to get per-function stack use
+arm-none-eabi-gcc -fstack-usage -c adcs.c
+
+# Output: adcs.su
+# adcs.c:47:6:run_control_loop    312 static
+# adcs.c:89:6:read_sensors          64 static
+# adcs.c:135:6:quat_multiply         48 static
+```
+
+Sum the call chain for your deepest function:
+```
+run_control_loop (312) → quat_multiply (48) → (inline) = 360 bytes
++ interrupt stack frame on Cortex-M: ~8 × 4 = 32 bytes
++ safety margin: 25% = 98 bytes
+Total stack: 360 + 32 + 98 ≈ 512 bytes → allocate 512 bytes minimum
+```
+
+Verify at runtime with FreeRTOS stack high-water mark:
+```c
+// Call periodically during development
+UBaseType_t hwm = uxTaskGetStackHighWaterMark(adcs_task_handle);
+// hwm is words remaining — if < 32, increase the stack
+```
+
+---
+
+## Schedulability Analysis
+
+Given your task set with measured WCETs, verify the system is schedulable before deploying:
+
+| Task | Period (T) | WCET (C) | Utilization (C/T) |
+|---|---|---|---|
+| ADCS control | 100 ms | 8 ms | 0.080 |
+| Fault monitor | 200 ms | 3 ms | 0.015 |
+| Command handler | 500 ms | 12 ms | 0.024 |
+| Telemetry | 1000 ms | 20 ms | 0.020 |
+| Scrubber | 500 ms | 5 ms | 0.010 |
+| **Total** | | | **0.149** |
+
+RMS schedulability bound for 5 tasks: $5(2^{1/5}-1) = 0.743$
+
+$0.149 < 0.743$ — schedulable with large margin. 85% CPU headroom available for additional tasks or unexpected load.
+
+---
+
+## Interrupt Latency
+
+Interrupt latency = time from interrupt assertion to first instruction of ISR. On Cortex-M4:
+
+- Minimum latency: 12 cycles (hardwired pipeline flush + context save)
+- With priority grouping and tail-chaining: can be as low as 6 cycles
+
+For time-critical ISRs (GPS PPS timestamping, hardware timer synchronization):
+```c
+// Minimize latency: keep ISR short, high priority, no FreeRTOS API
+void GPS_PPS_IRQHandler(void) {
+    // Capture timestamp immediately — this is cycle-accurate
+    pps_timestamp_cycles = DWT->CYCCNT;
+    pps_timestamp_ticks  = xTaskGetTickCountFromISR();
+    // Signal processing task via notification
+    BaseType_t xWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(xTimeSyncTask, &xWoken);
+    portYIELD_FROM_ISR(xWoken);
+}
+```

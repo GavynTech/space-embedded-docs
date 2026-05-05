@@ -7,6 +7,169 @@ sidebar_position: 4
 
 # Static Analysis
 
-*Full content coming soon. This page is part of the Safety & Reliability section.*
+Static analysis examines source code without executing it, finding bugs, undefined behavior, and rule violations that testing might miss. In space software development, static analysis is mandatory at DO-178C DAL A/B levels and strongly recommended at all levels.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Why Static Analysis in Space
+
+- Detects issues before integration — cheaper to fix early
+- Finds classes of bugs that test coverage misses (uninitialized vars on rare paths, integer overflow)
+- Enforces coding standards (MISRA-C) mechanically rather than relying on code review
+- Provides evidence of due diligence for certification authorities
+
+---
+
+## Categories of Issues Found
+
+| Category | Example | Risk |
+|----------|---------|------|
+| Null pointer dereference | `ptr->field` where `ptr` can be NULL | Crash |
+| Uninitialized variable | Reading a variable before writing | Undefined behavior |
+| Integer overflow | `uint8_t x = 200 + 100` | Wrap to wrong value |
+| Array out of bounds | `arr[index]` where `index >= SIZE` | Memory corruption |
+| Unreachable code | Dead branches | Wasted code, hidden logic |
+| Race condition | Shared variable without lock | Non-determinism |
+| Resource leak | `malloc` without `free` | Memory exhaustion |
+| Division by zero | `result = x / divisor` unchecked | Crash |
+| Stack overflow | Deep recursion or large stack frames | Silent corruption |
+
+---
+
+## Tools Used in Space Programs
+
+### Polyspace (MathWorks)
+
+Industry standard for aerospace:
+
+- **Polyspace Bug Finder**: finds defects (null derefs, overflow, etc.)
+- **Polyspace Code Prover**: formal verification of absence of runtime errors using abstract interpretation
+- Supports DO-178C evidence generation
+
+```
+Polyspace Code Prover result colors:
+  Green  = proven safe (no violation possible)
+  Orange = unproven (possible violation, needs review)
+  Red    = proven violation (must fix)
+  Gray   = unreachable code
+```
+
+### LDRA Testbed
+
+- MISRA-C rule checking
+- Structural coverage measurement (MC/DC)
+- Certification evidence generation
+
+### Coverity (Synopsys)
+
+- Interprocedural analysis
+- Finds resource leaks, concurrency issues, security vulnerabilities
+- Used widely in commercial space (SpaceX, Planet Labs)
+
+### PC-lint Plus (Gimpel)
+
+- Lightweight MISRA-C checker
+- Low cost, high throughput
+- Often used as first-pass filter before heavier tools
+
+### Clang Static Analyzer / clang-tidy
+
+- Free, integrates into CI pipelines
+- Less aerospace-specific but excellent for C/C++
+- Good for CubeSat/commercial programs without certification budgets
+
+---
+
+## MISRA-C Compliance
+
+See [MISRA-C](../embedded-cpp/misra-c) for full coverage. From a static analysis perspective:
+
+```c
+// MISRA-C Rule 14.4 violation: non-boolean controlling expression
+if (ptr) { ... }   // BAD: MISRA wants explicit comparison
+if (ptr != NULL) { ... }  // OK
+
+// Rule 12.2 violation: shift count out of range
+uint8_t x = 1u << 9u;  // BAD: shift of 8-bit type by 9
+
+// Rule 17.2 violation: recursion
+uint32_t factorial(uint32_t n) {
+    return (n <= 1u) ? 1u : n * factorial(n - 1u);  // BAD
+}
+```
+
+Static analysis tools enforce these mechanically with near-zero false negatives.
+
+---
+
+## Abstract Interpretation
+
+Tools like Polyspace Code Prover use abstract interpretation — a form of formal verification that over-approximates all possible program states:
+
+```
+For each variable, track a range: x ∈ [min, max]
+
+If a potential division by zero can occur with any value in the range,
+it is reported as orange (unproven) or red (proven violation).
+
+Example:
+  int x = sensor_read();  // range: [-32768, 32767]
+  int y = 100 / x;        // x can be 0 → ORANGE (possible div by zero)
+
+  if (x != 0) {
+      int y = 100 / x;    // x ∈ [-32768, -1] ∪ [1, 32767] → GREEN
+  }
+```
+
+When all code is green in Code Prover, you have a formal proof that specific runtime errors cannot occur — acceptable as DO-178C verification evidence.
+
+---
+
+## Integration into CI/CD
+
+Static analysis must be run on every change:
+
+```yaml
+# Example GitHub Actions CI step
+- name: Run Polyspace Bug Finder
+  run: |
+    polyspace-bug-finder-server \
+      -sources src/ \
+      -coding-rules-config misra_2012.xml \
+      -results-dir results/
+    polyspace-results-export \
+      -results-dir results/ \
+      -format csv \
+      -output findings.csv
+
+- name: Fail on new findings
+  run: |
+    python scripts/check_new_findings.py findings.csv baseline/
+```
+
+---
+
+## Managing Orange Findings
+
+In formal verification, orange means "not proven safe." Each orange must be manually justified:
+
+```
+Finding: Possible array out-of-bounds access at line 42
+  arr[index] where index ∈ [0, MAX_INDEX]
+
+Justification: index is always checked before this call (see line 39).
+  Polyspace cannot track the constraint across this function boundary.
+  Inspection confirms safety. Marked justified. Reviewer: J. Smith, 2024-01-15.
+```
+
+Justified oranges accumulate into a review record that forms part of the certification evidence.
+
+---
+
+## Key References
+
+- [Safety & Reliability Overview](./overview)
+- [MISRA-C](../embedded-cpp/misra-c)
+- [Formal Verification](./formal-verification)
+- [Testing Strategy](./testing-strategy)
+- [DO-178C](./do-178c)

@@ -7,6 +7,131 @@ sidebar_position: 3
 
 # ECSS Standards
 
-*Full content coming soon. This page is part of the Safety & Reliability section.*
+The European Cooperation for Space Standardization (ECSS) publishes the primary engineering standards for European space programs. Unlike DO-178C (aviation), ECSS is written specifically for space — covering software, hardware, quality, project management, and testing.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## ECSS Organization
+
+ECSS standards are organized into three branches:
+
+| Branch | Code | Scope |
+|--------|------|-------|
+| Management | ECSS-M | Project management, risk, configuration |
+| Engineering | ECSS-E | Technical engineering (hardware, software, systems) |
+| Quality | ECSS-Q | Quality assurance, reliability, parts |
+
+---
+
+## Key Software Standards
+
+### ECSS-E-ST-40C: Software Engineering
+
+The primary software development standard. Defines:
+
+- **Software assurance levels (SAL)** — analogous to DO-178C DAL
+- Life cycle: concept → requirements → design → production → verification → acceptance
+- Documentation requirements per SAL
+
+| SAL | Failure Consequence | Applies To |
+|-----|--------------------|-----------|
+| SAL 1 | Catastrophic (loss of mission, crew) | Primary flight-critical |
+| SAL 2 | Critical (serious mission impact) | Major subsystems |
+| SAL 3 | Marginal (minor mission impact) | Support functions |
+| SAL 4 | Negligible | Ground tools |
+
+### ECSS-E-ST-40-07: Methods and Tools
+
+Guidance on development environments, programming languages, tool qualification, and automated analysis.
+
+### ECSS-Q-ST-80C: Software Product Assurance
+
+Quality assurance requirements — independent reviews, audits, non-conformance management, anomaly reporting.
+
+---
+
+## ECSS-E-ST-50 Series: Communication Protocols
+
+The ECSS communication standards are widely implemented and important for embedded developers:
+
+| Standard | Protocol | Description |
+|----------|---------|-------------|
+| ECSS-E-ST-50-01 | SpaceWire | High-speed LVDS point-to-point network |
+| ECSS-E-ST-50-02 | MIL-STD-1553 | Legacy avionics bus |
+| ECSS-E-ST-50-05 | SpaceFibre | Gigabit serial fabric (SpaceWire successor) |
+| ECSS-E-ST-50-12 | CANbus | Controller Area Network for spacecraft |
+| ECSS-E-ST-50-15 | CANopen | Application layer over CAN |
+
+### SpaceWire (ECSS-E-ST-50-01)
+
+SpaceWire is the dominant interconnect for modern spacecraft avionics:
+
+- **Speed**: 2 Mbps – 400 Mbps
+- **Physical**: LVDS differential pairs
+- **Topology**: Routed network (not broadcast)
+- **Flow control**: Credit-based (SpaceWire credits)
+- **Addressing**: Path or logical addressing
+
+```c
+// SpaceWire packet structure
+typedef struct {
+    uint8_t  destination_addr;   // Path addressing
+    uint8_t  protocol_id;        // 0x02 = RMAP, 0xF0 = custom
+    uint8_t  payload[];
+    uint8_t  end_of_packet;      // 0xEOP marker
+} SpWPacket_t;
+```
+
+---
+
+## ECSS-E-ST-10-03: Testing
+
+Testing standard covering:
+
+- Test levels: unit → integration → validation → acceptance
+- Test documentation: test plan, specification, report
+- Verification methods: analysis, inspection, similarity, test
+
+---
+
+## ECSS-Q-ST-60: Electrical, Electronic, Electromechanical (EEE) Parts
+
+Requirements for component selection and qualification. Critical for radiation tolerance:
+
+- **Grade 1**: Space-qualified (hi-rel, radiation tested)
+- **Grade 2**: Military-qualified
+- **Grade 3**: Industrial/automotive
+- **Grade 4**: Commercial (requires screening + rad testing for space use)
+
+---
+
+## Compliance in Practice
+
+ESA missions (and those procured under ESA contracts) require ECSS compliance as part of the contract. The implementing process:
+
+1. Define applicable ECSS standards in the Statement of Work
+2. Tailor each standard (waive non-applicable requirements with justification)
+3. Produce required deliverables (DRD = Document Requirements Definition)
+4. Submit to ESA/prime for review and approval at gates
+
+---
+
+## ECSS vs. NASA Standards
+
+| Aspect | ECSS | NASA |
+|--------|------|------|
+| Primary software standard | ECSS-E-ST-40C | NASA-STD-8739.8 |
+| Communication protocols | ECSS-E-ST-50 series | CCSDS (harmonized with ECSS) |
+| Parts qualification | ECSS-Q-ST-60 | EEE-INST-002 |
+| Scope | Pan-European | NASA programs only |
+| Safety levels | SAL 1–4 | DAL A–E (DO-178C ref) |
+
+---
+
+## Key References
+
+- [Safety & Reliability Overview](./overview)
+- [DO-178C](./do-178c)
+- [Certification Path](./certification-path)
+- [Static Analysis](./static-analysis)
+- [Testing Strategy](./testing-strategy)

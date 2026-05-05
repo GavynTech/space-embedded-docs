@@ -7,6 +7,150 @@ sidebar_position: 7
 
 # Kalman Filter
 
-*Full content coming soon. This page is part of the Orbital Physics section.*
+The Kalman filter is the mathematical backbone of spacecraft attitude determination and orbit estimation. It fuses noisy sensor measurements with a dynamic model to produce an optimal state estimate — better than any single sensor alone.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Why Kalman in Space
+
+- Gyroscopes drift over time → need correction from absolute sensors (star tracker, sun sensor)
+- GPS gives position but not attitude → must fuse with IMU
+- No single sensor is reliable in all conditions → sensor fusion handles gaps
+- Kalman gives optimal estimate under Gaussian noise assumptions
+
+---
+
+## Linear Kalman Filter
+
+For linear systems with Gaussian noise:
+
+**State equation**: x_{k+1} = F × x_k + B × u_k + w_k
+
+**Measurement equation**: z_k = H × x_k + v_k
+
+where w_k ~ N(0, Q) is process noise and v_k ~ N(0, R) is measurement noise.
+
+### Algorithm
+
+```
+Predict:
+  x̂⁻ₖ = F × x̂_{k-1} + B × u_{k-1}    (predicted state)
+  P⁻ₖ  = F × P_{k-1} × Fᵀ + Q          (predicted covariance)
+
+Update:
+  Kₖ   = P⁻ₖ × Hᵀ × (H × P⁻ₖ × Hᵀ + R)⁻¹  (Kalman gain)
+  x̂ₖ  = x̂⁻ₖ + Kₖ × (zₖ − H × x̂⁻ₖ)        (updated state)
+  Pₖ   = (I − Kₖ × H) × P⁻ₖ                   (updated covariance)
+```
+
+---
+
+## Extended Kalman Filter (EKF)
+
+For nonlinear systems (like attitude dynamics), linearize around the current estimate:
+
+```cpp
+// Attitude EKF: state = [quaternion (4), gyro bias (3)]
+struct EKFState {
+    Eigen::Quaterniond q;          // attitude quaternion
+    Eigen::Vector3d    gyro_bias;  // gyro bias estimate [rad/s]
+    Eigen::Matrix<double,7,7> P;   // covariance
+};
+
+void ekf_predict(EKFState &s, const Eigen::Vector3d &gyro_meas, double dt) {
+    // Correct gyro for bias
+    Eigen::Vector3d omega = gyro_meas - s.gyro_bias;
+
+    // Propagate quaternion
+    Eigen::Quaterniond dq;
+    double angle = omega.norm() * dt;
+    if (angle > 1e-10) {
+        dq = Eigen::AngleAxisd(angle, omega.normalized());
+    } else {
+        dq = Eigen::Quaterniond::Identity();
+    }
+    s.q = (s.q * dq).normalized();
+
+    // Linearized state transition matrix F
+    // ... (full implementation in Attitude Control Loop synthesis)
+
+    // Propagate covariance: P = F*P*F' + Q
+    // ...
+}
+
+void ekf_update_star_tracker(EKFState &s,
+                              const Eigen::Quaterniond &meas_q,
+                              const Eigen::Matrix3d &R_star) {
+    // Innovation: difference between measured and predicted attitude
+    Eigen::Quaterniond dq = s.q.inverse() * meas_q;
+    Eigen::Vector3d innovation = 2.0 * dq.vec(); // small angle approx
+
+    // Kalman gain computation and state update
+    // ...
+}
+```
+
+---
+
+## Unscented Kalman Filter (UKF)
+
+For highly nonlinear dynamics, the UKF propagates **sigma points** through the nonlinear function instead of linearizing:
+
+1. Generate 2n+1 sigma points from current state and covariance
+2. Propagate each sigma point through the nonlinear dynamics
+3. Reconstruct mean and covariance from propagated sigma points
+4. Apply standard measurement update
+
+Better accuracy than EKF, higher computational cost. Commonly used for orbit determination.
+
+---
+
+## MEKF (Multiplicative EKF)
+
+Quaternions have a normalization constraint — the linear EKF update can violate it. The MEKF maintains the quaternion constraint by estimating an **error quaternion** and composing it with the reference:
+
+```
+State vector: [δθ (3), gyro_bias (3)] — 6 states, no quaternion in state
+Reference quaternion: q̄ updated separately
+True quaternion: q = q̄ ⊗ δq(δθ)
+```
+
+This is the industry standard for spacecraft attitude estimation.
+
+---
+
+## Tuning Q and R
+
+| Matrix | Meaning | How to Set |
+|--------|---------|-----------|
+| Q (process noise) | How much the model is wrong | From gyro ARW spec, maneuver uncertainty |
+| R (measurement noise) | How much sensors are wrong | From sensor datasheet noise spec |
+| P₀ (initial covariance) | Initial uncertainty | Match initial state uncertainty |
+
+Tuning is empirical: too small Q → filter lags reality; too large Q → noisy output.
+
+---
+
+## Innovation Monitoring
+
+The **innovation** (measurement residual) is a diagnostic:
+
+```
+innovation = z_measured − H × x̂_predicted
+```
+
+If innovations are zero-mean and bounded, the filter is healthy. Large or biased innovations indicate:
+
+- Sensor fault
+- Wrong process model
+- Unmodeled dynamics (maneuver, disturbance)
+
+---
+
+## Key References
+
+- [Attitude Representation](./attitude-representation)
+- [ADCS Software](./adcs-software)
+- [Attitude Control Loop](../synthesis/attitude-control-loop)
+- [Coordinate Frames](./coordinate-frames)
+- [Orbital Physics Overview](./overview)

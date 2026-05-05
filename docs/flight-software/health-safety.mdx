@@ -5,8 +5,147 @@ sidebar_label: Health & Safety
 sidebar_position: 6
 ---
 
-# Health & Safety
+# Health & Safety Monitoring
 
-*Full content coming soon. This page is part of the Flight Software section.*
+Health and safety (H&S) monitoring is the flight software's immune system. It continuously checks that all subsystems are operating within safe limits and triggers protective actions when they aren't — autonomously, without waiting for a ground contact.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Monitoring Architecture
+
+```
+Sensor Data → Limit Checker → Event Generator → Response Executor
+                   │                                    │
+              Out-of-Limit                    Fault Response Table
+              Detection                      (cmd to execute per fault)
+```
+
+In cFS, the **Limit Checker (LC)** app implements this pattern. Each watchpoint maps a telemetry value to a set of action points that fire on violation.
+
+---
+
+## Watchpoints and Action Points
+
+### Watchpoint
+
+A watchpoint monitors a single telemetry value against a threshold:
+
+```c
+typedef struct {
+    uint16_t  MsgID;           // Which telemetry message
+    uint16_t  Offset;          // Byte offset of the value
+    uint8_t   DataType;        // INT8, UINT16, FLOAT, etc.
+    uint8_t   Operator;        // <=, >=, ==, !=
+    LC_MultiType_t CompareValue;
+    uint16_t  MaxPassiveCount; // Consecutive violations before triggering
+} LC_WDTEntry_t;
+```
+
+### Action Point
+
+An action point fires a command when a set of watchpoints evaluate to a given boolean expression:
+
+```c
+typedef struct {
+    uint16_t DefaultState;     // LC_ACTION_NOT_USED, LC_APSTATE_ACTIVE
+    uint16_t RPNEquation[LC_MAX_RPN_EQU_SIZE]; // Boolean expr over watchpoints
+    LC_MultiType_t MaxFailPassCount;
+    uint16_t EventType;
+    uint32_t EventID;
+    char     EventText[LC_MAX_ACTION_TEXT];
+    uint16_t RTSId;            // Stored command sequence to execute
+} LC_ADTEntry_t;
+```
+
+---
+
+## Limit Types
+
+| Type | Example | Response |
+|------|---------|----------|
+| Hard limit | Battery voltage < 6.0V | Immediate safe mode |
+| Soft limit | CPU temp > 60°C | Event message, monitor |
+| Rate limit | Attitude rate > 5°/s | Disable thruster firing |
+| Stuck value | Sensor reads same value 10× | Flag as failed |
+| Invalid value | NaN or out-of-physics | Flag sensor failed |
+
+---
+
+## Autonomous Responses
+
+When ground is not in contact (which is most of the time in LEO), the spacecraft must handle faults autonomously:
+
+```
+Fault Detected
+     │
+     ├─ Severity: MINOR  → Log event, increase monitoring rate
+     │
+     ├─ Severity: MAJOR  → Disable faulted component, use backup
+     │
+     └─ Severity: CRITICAL → Enter safe mode, await ground command
+```
+
+---
+
+## Safe Mode Trigger Conditions
+
+Common conditions that autonomously trigger safe mode:
+
+| Condition | Threshold |
+|-----------|-----------|
+| Battery State of Charge | < 20% |
+| CPU temperature | > 85°C |
+| Unrecoverable software fault | 3 consecutive watchdog resets |
+| Attitude control failure | 60s without valid attitude solution |
+| Communication blackout | > 7 days without ground contact |
+
+---
+
+## Health Telemetry Structure
+
+```c
+typedef struct {
+    float    batt_voltage_v;
+    float    batt_current_ma;
+    float    batt_temp_c;
+    float    solar_power_w;
+    float    cpu_temp_c;
+    float    bus_voltage_5v;
+    uint16_t watchdog_resets;
+    uint16_t soft_fault_count;
+    uint8_t  mode;              // NORMAL, SAFE, SURVIVAL
+    uint8_t  active_string;     // 0=primary, 1=redundant
+} HkTlm_t;
+```
+
+This packet is downlinked at 1 Hz even in safe mode. Ground operators can always see spacecraft health.
+
+---
+
+## Watchdog Integration
+
+The health monitor feeds the watchdog. If H&S itself freezes (deadlock, stuck task), the watchdog fires:
+
+```c
+void HealthMonitor_Task(void) {
+    while (1) {
+        check_all_watchpoints();
+        evaluate_action_points();
+        send_hk_telemetry();
+        watchdog_kick();                     // Must happen every cycle
+        OS_TaskDelay(HEALTH_MONITOR_RATE_MS);
+    }
+}
+```
+
+See [Fault Management](./fault-management) for full FDIR architecture.
+
+---
+
+## Key References
+
+- [Flight Software Overview](./overview)
+- [Fault Management](./fault-management)
+- [Safe Mode FSM](../synthesis/safe-mode-fsm)
+- [Power Systems](../space-hardware/power-systems)
+- [Watchdog Patterns](../rtos/watchdog-patterns)

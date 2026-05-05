@@ -7,6 +7,198 @@ sidebar_position: 3
 
 # Safe Mode FSM
 
-*Full content coming soon. This page is part of the Synthesis section.*
+Safe mode is the spacecraft's protective refuge. When something goes wrong — power dropping, attitude lost, software faulting — the vehicle must autonomously shed everything non-essential and survive until ground operators can diagnose and recover. This page implements a complete safe mode finite state machine in embedded C.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## State Diagram
+
+```
+        Fault Detected
+NORMAL ──────────────────▶ SAFE_ENTRY
+  ▲                              │
+  │ Ground CMD                   │ Initialization complete
+  │ (RESUME)                     ▼
+  │                         SAFE_STANDBY ──────▶ SURVIVAL
+  └─────────────────────────────┘        Power critical
+```
+
+### States
+
+| State | Description |
+|-------|-------------|
+| `NORMAL` | Full mission operations |
+| `SAFE_ENTRY` | Transitioning to safe mode — shedding loads |
+| `SAFE_STANDBY` | Minimal ops, awaiting ground recovery |
+| `SURVIVAL` | Extreme power emergency — radio beacon only |
+
+---
+
+## State Machine Implementation
+
+```c
+// safe_mode_fsm.h
+typedef enum {
+    SM_STATE_NORMAL       = 0,
+    SM_STATE_SAFE_ENTRY   = 1,
+    SM_STATE_SAFE_STANDBY = 2,
+    SM_STATE_SURVIVAL     = 3,
+    SM_STATE_COUNT
+} SafeModeState_t;
+
+typedef enum {
+    SM_EVT_FAULT_DETECTED   = 0,
+    SM_EVT_ENTRY_COMPLETE   = 1,
+    SM_EVT_POWER_CRITICAL   = 2,
+    SM_EVT_RESUME_CMD       = 3,
+    SM_EVT_POWER_RECOVERED  = 4,
+    SM_EVT_COUNT
+} SafeModeEvent_t;
+
+typedef struct {
+    SafeModeState_t state;
+    uint32_t        entry_time_tai;
+    uint32_t        fault_code;
+    uint16_t        safe_mode_count;
+} SafeModeFSM_t;
+```
+
+---
+
+## Transition Table
+
+```c
+// safe_mode_fsm.c
+#include "safe_mode_fsm.h"
+#include "eps_api.h"
+#include "adcs_api.h"
+#include "comms_api.h"
+#include "event_log.h"
+
+typedef struct {
+    SafeModeState_t from;
+    SafeModeEvent_t event;
+    SafeModeState_t to;
+    void (*action)(SafeModeFSM_t *fsm);
+} Transition_t;
+
+// --- Entry/Exit Actions ---
+
+static void action_enter_safe(SafeModeFSM_t *fsm) {
+    // 1. Disable payload
+    eps_set_load(LOAD_PAYLOAD, false);
+    // 2. Disable non-essential heaters
+    eps_set_load(LOAD_SCIENCE_HEATERS, false);
+    // 3. Stop ADCS maneuvers, enter sun-pointing
+    adcs_cmd_sun_point();
+    // 4. Set telemetry to safe-mode rate
+    comms_set_tlm_rate(TLM_RATE_SAFE);
+    // 5. Broadcast safe mode event
+    event_log(EVT_SAFE_MODE_ENTRY, fsm->fault_code, fsm->safe_mode_count);
+}
+
+static void action_enter_standby(SafeModeFSM_t *fsm) {
+    fsm->entry_time_tai = tai_get();
+    fsm->safe_mode_count++;
+    event_log(EVT_SAFE_STANDBY, 0, 0);
+}
+
+static void action_enter_survival(SafeModeFSM_t *fsm) {
+    // Shed everything except OBC and comms beacon
+    eps_set_load(LOAD_ADCS,       false);
+    eps_set_load(LOAD_HEATERS,    false);
+    eps_set_load(LOAD_AUX_COMMS,  false);
+    comms_enable_beacon_only();
+    event_log(EVT_SURVIVAL_MODE, 0, 0);
+}
+
+static void action_resume_normal(SafeModeFSM_t *fsm) {
+    // Ground has commanded resume — re-enable subsystems
+    adcs_cmd_nadir_point();
+    eps_restore_nominal_loads();
+    comms_set_tlm_rate(TLM_RATE_NOMINAL);
+    event_log(EVT_NORMAL_OPS_RESUME, 0, 0);
+}
+
+static void action_exit_survival(SafeModeFSM_t *fsm) {
+    // Power recovered — restore safe standby loads
+    eps_set_load(LOAD_ADCS, true);
+    adcs_cmd_sun_point();
+    event_log(EVT_SURVIVAL_CLEARED, 0, 0);
+}
+
+// --- Transition Table ---
+
+static const Transition_t transitions[] = {
+    { SM_STATE_NORMAL,       SM_EVT_FAULT_DETECTED, SM_STATE_SAFE_ENTRY,   action_enter_safe     },
+    { SM_STATE_SAFE_ENTRY,   SM_EVT_ENTRY_COMPLETE, SM_STATE_SAFE_STANDBY, action_enter_standby  },
+    { SM_STATE_SAFE_STANDBY, SM_EVT_POWER_CRITICAL, SM_STATE_SURVIVAL,     action_enter_survival },
+    { SM_STATE_SAFE_STANDBY, SM_EVT_RESUME_CMD,     SM_STATE_NORMAL,       action_resume_normal  },
+    { SM_STATE_SURVIVAL,     SM_EVT_POWER_RECOVERED,SM_STATE_SAFE_STANDBY, action_exit_survival  },
+};
+```
+
+---
+
+## FSM Step Function
+
+```c
+void safe_mode_fsm_step(SafeModeFSM_t *fsm, SafeModeEvent_t event) {
+    for (size_t i = 0; i < ARRAY_SIZE(transitions); i++) {
+        if (transitions[i].from  == fsm->state &&
+            transitions[i].event == event) {
+            SafeModeState_t prev = fsm->state;
+            fsm->state = transitions[i].to;
+            if (transitions[i].action) {
+                transitions[i].action(fsm);
+            }
+            event_log(EVT_FSM_TRANSITION, prev, fsm->state);
+            return;
+        }
+    }
+    // No matching transition — log and ignore
+    event_log(EVT_FSM_INVALID_EVENT, fsm->state, event);
+}
+```
+
+---
+
+## Trigger Conditions
+
+Call `safe_mode_fsm_step()` with the appropriate event when:
+
+| Condition | Event |
+|-----------|-------|
+| 3+ watchdog resets in 1 hour | `SM_EVT_FAULT_DETECTED` |
+| Battery SoC < 20% | `SM_EVT_FAULT_DETECTED` |
+| Attitude error > 30° for > 60s | `SM_EVT_FAULT_DETECTED` |
+| FDIR action point fires | `SM_EVT_FAULT_DETECTED` |
+| Safe entry actions complete | `SM_EVT_ENTRY_COMPLETE` |
+| Battery voltage < 6.2V | `SM_EVT_POWER_CRITICAL` |
+| Battery voltage > 7.0V | `SM_EVT_POWER_RECOVERED` |
+| Ground RESUME command | `SM_EVT_RESUME_CMD` |
+
+---
+
+## Telemetry
+
+```c
+typedef struct {
+    uint8_t  current_state;
+    uint8_t  previous_state;
+    uint16_t safe_mode_count;
+    uint32_t entry_time_tai;
+    uint32_t last_fault_code;
+    uint32_t time_in_state_s;
+} SafeModeTlm_t;
+```
+
+---
+
+## Key References
+
+- [State Machines](../flight-software/state-machines)
+- [Health & Safety Monitoring](../flight-software/health-safety)
+- [Fault Management](../flight-software/fault-management)
+- [Power Budget Manager](./power-budget-manager)
+- [Synthesis Overview](./overview)

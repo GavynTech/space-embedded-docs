@@ -7,6 +7,149 @@ sidebar_position: 7
 
 # Data Stores
 
-*Full content coming soon. This page is part of the Flight Software section.*
+Flight software must persist data across resets, power cycles, and software updates. The wrong storage choice can mean losing science data, boot loop corruption, or lost telemetry. Space-grade storage is constrained, slow, and vulnerable to radiation.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Storage Hierarchy
+
+```
+┌─────────────────────────────────────────────────┐
+│  Registers / CPU Cache       (volatile, ns)      │
+├─────────────────────────────────────────────────┤
+│  SRAM                        (volatile, ns)      │
+├─────────────────────────────────────────────────┤
+│  SDRAM / DRAM + ECC          (volatile, ns-µs)   │
+├─────────────────────────────────────────────────┤
+│  NVRAM / MRAM / FeRAM        (non-volatile, µs)  │
+├─────────────────────────────────────────────────┤
+│  NOR Flash                   (non-volatile, ms)  │
+├─────────────────────────────────────────────────┤
+│  NAND Flash / SD             (non-volatile, ms)  │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Storage Types in Space
+
+### NVRAM / MRAM
+
+Magnetoresistive RAM is the gold standard for space persistent storage:
+
+- Non-volatile — survives power loss and reset
+- Byte-addressable — no erase cycle required
+- Radiation tolerant — SEU effects are recoverable
+- Relatively slow write (comparable to NOR flash)
+- Used for: boot counters, fault logs, config tables, watchdog state
+
+### NOR Flash
+
+Used for code storage and firmware images:
+
+- Reliable bit-level reads — CPU can execute-in-place (XIP)
+- Slow erase (sector granularity, 100ms+)
+- Limited erase cycles (~10,000–100,000)
+- Redundant image storage: primary + backup slots
+- Used for: bootloader, OS image, app image
+
+### NAND Flash
+
+Used for bulk science/telemetry data:
+
+- High density, lower cost per bit
+- Requires page-level writes and block erases
+- Bad block management required
+- Must use error correction (BCH, Reed-Solomon)
+- Used for: recorded telemetry, science data recorder, event logs
+
+---
+
+## Critical Patterns
+
+### Atomic Write to NVRAM
+
+Power can fail mid-write. Use a double-buffer pattern:
+
+```c
+typedef struct {
+    uint32_t magic;
+    uint32_t sequence;
+    uint8_t  data[DATA_SIZE];
+    uint32_t crc;
+} NvramRecord_t;
+
+void nvram_write_atomic(NvramRecord_t *slot_a, NvramRecord_t *slot_b,
+                        const uint8_t *data) {
+    // Alternate between slots, always write the higher-sequence slot
+    uint32_t next_seq = MAX(slot_a->sequence, slot_b->sequence) + 1;
+    NvramRecord_t *target = (next_seq % 2 == 0) ? slot_a : slot_b;
+
+    target->magic    = NVRAM_MAGIC;
+    target->sequence = next_seq;
+    memcpy(target->data, data, DATA_SIZE);
+    target->crc = crc32(target->data, DATA_SIZE);
+}
+```
+
+On boot, read both slots and use the one with the higher valid sequence number.
+
+### Wear Leveling for Flash
+
+Flash cells wear out. Spread writes across the device:
+
+```c
+// Round-robin sector selection for log ring buffer
+typedef struct {
+    uint32_t head_sector;
+    uint32_t tail_sector;
+    uint32_t sector_count;
+} FlashRingBuf_t;
+
+uint32_t flash_ring_next_sector(FlashRingBuf_t *rb) {
+    uint32_t sector = rb->head_sector;
+    rb->head_sector = (rb->head_sector + 1) % rb->sector_count;
+    return sector;
+}
+```
+
+---
+
+## Data Store Categories
+
+| Store | Media | Contents | Update Rate |
+|-------|-------|----------|-------------|
+| Boot state | NVRAM | Boot count, fail count, reset cause | Each boot |
+| Config tables | NOR Flash | Limit checking thresholds, app params | Rare (ground cmd) |
+| Fault log | NVRAM | Error events with timestamp | On event |
+| Science data | NAND Flash | Payload measurements | Mission-dependent |
+| Telemetry recorder | NAND Flash | All downlinked TM (for replay) | 1–10 Hz |
+| Software images | NOR Flash | Primary + backup OS + apps | On patch upload |
+
+---
+
+## Scrubbing
+
+Radiation causes bit flips in stored data. Periodic scrubbing re-reads and rewrites data to correct accumulated errors before they compound:
+
+```c
+void scrub_nvram(void) {
+    for (uint32_t addr = NVRAM_BASE; addr < NVRAM_END; addr += SCRUB_BLOCK) {
+        uint8_t buf[SCRUB_BLOCK];
+        nvram_read(addr, buf, SCRUB_BLOCK);
+        // ECC correction happens in hardware or here
+        nvram_write(addr, buf, SCRUB_BLOCK); // refreshes cell charge
+    }
+}
+```
+
+See [ECC Memory Scrubber](../synthesis/ecc-memory-scrubber) for a full implementation.
+
+---
+
+## Key References
+
+- [Flight Software Overview](./overview)
+- [ECC Memory Scrubber](../synthesis/ecc-memory-scrubber)
+- [Safety & Reliability Overview](../safety-reliability/overview)
+- [Radiation Effects](../space-hardware/radiation-effects)

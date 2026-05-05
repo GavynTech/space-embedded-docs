@@ -1,12 +1,106 @@
 ---
 id: microcontrollers
-title: Microcontrollers
+title: Spacecraft Microcontrollers
 sidebar_label: Microcontrollers
 sidebar_position: 4
 ---
 
-# Microcontrollers
+# Spacecraft Microcontrollers
 
-*Full content coming soon. This page is part of the Space Hardware section.*
+The processor is the heart of the flight computer. Spacecraft processor selection involves tradeoffs that don't exist in commercial embedded design: radiation tolerance, heritage, export control, and power consumption in vacuum.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## The Heritage Factor
+
+In aerospace, "heritage" means "previously flown successfully." A processor that has been on 20 missions is trusted differently than a new part, even if the new part is technically superior. Heritage reduces program risk — you're using the same silicon that survived a similar radiation environment on a similar mission.
+
+This is why the RAD750 (designed in the 1990s from PowerPC 750 technology) is still flying on modern missions.
+
+---
+
+## High-Reliability Space Processors
+
+### RAD750 — BAE Systems
+The most widely used space processor for high-reliability missions.
+
+| Parameter | Value |
+|---|---|
+| Architecture | PowerPC 750 |
+| Clock speed | 133–200 MHz |
+| Process node | 150 nm SOI |
+| TID tolerance | 1 Mrad |
+| SEL | Immune (SOI process) |
+| SEU upset rate | Very low |
+| Price | ~$200,000 |
+| Used on | Curiosity, Perseverance, MRO, Parker Solar Probe |
+
+### LEON3-FT — Cobham/Frontgrade
+The ESA standard. Open-source SPARC V8 IP, implemented in rad-hard processes by multiple vendors.
+
+| Parameter | Value |
+|---|---|
+| Architecture | SPARC V8 |
+| Clock speed | 40–100 MHz (fab-dependent) |
+| TID tolerance | 100–300 krad |
+| Features | Hardware FPU, ECC cache, TMR option |
+| Used on | Rosetta, BepiColombo, many ESA missions |
+
+---
+
+## Commercial Space / CubeSat Processors
+
+For LEO CubeSats with shorter missions (2–5 years) and lower altitude, COTS processors with radiation screening are often acceptable.
+
+### STM32H7 Series — STMicroelectronics
+Popular in commercial CubeSats. ARM Cortex-M7 at 480 MHz with FPU and DSP extensions.
+
+```c
+// STM32H7 typical configuration for flight
+// Clock: PLL → 480 MHz from 8 MHz HSE
+// Flash wait states: 4 (required at 480 MHz)
+// Core voltage: 1.2V VOS0 for max performance
+
+SystemClock_Config();   // configure PLL in startup code
+HAL_RCC_EnableCSS();    // clock security system — resets on clock failure
+```
+
+### iMX RT1060 — NXP
+ARM Cortex-M7 at 600 MHz. Used in some CubeSat OBCs. Better memory bandwidth than STM32 for image processing.
+
+### Xilinx Zynq (Zynq-7000, Zynq UltraScale+)
+ARM Cortex-A + FPGA fabric on one chip. Popular for payloads requiring onboard image processing or data reduction. The FPGA fabric handles sensor interfacing, the CPU runs the OS.
+
+---
+
+## ARM Cortex-R vs Cortex-M for Safety-Critical
+
+| | Cortex-M | Cortex-R |
+|---|---|---|
+| Target | Microcontrollers | Real-time, safety-critical |
+| Cache | No L1 data cache (typical M4) | Tightly coupled memory (deterministic) |
+| MPU | Optional | Always present, more capable |
+| Lockstep | Not available | Available (dual-core lockstep option) |
+| ECC | Optional | Built-in ECC on TCM |
+| WCET | Easier to analyze (no cache) | Analyzable with TCM |
+| Examples | STM32, nRF, LPC | TMS570 (automotive), SAM RH71 |
+
+For flight code where WCET analysis and DO-178C certification matter, Cortex-R's lockstep mode and deterministic memory access make it preferable over Cortex-M.
+
+**Lockstep mode:** Two CPU cores execute the same instructions simultaneously. A comparator checks outputs cycle-by-cycle. Any discrepancy (from an SEU hitting one core) is detected immediately and triggers a fault.
+
+---
+
+## Memory Architecture
+
+Space processors pair with radiation-tolerant memory:
+
+| Memory Type | Volatility | Access | Use |
+|---|---|---|---|
+| SRAM (ECC) | Volatile | Fast (~50 ns) | Program execution, data |
+| FLASH (NOR) | Non-volatile | Read fast, write slow | Code storage, parameters |
+| EEPROM | Non-volatile | Slow writes (ms) | Configuration, fault logs |
+| FeRAM | Non-volatile | Fast, unlimited writes | High-write-cycle data |
+| MRAM | Non-volatile | Fast, radiation-hard | Growing use in space |
+
+MRAM (Magnetoresistive RAM) is gaining adoption because it is radiation-tolerant by nature (magnetic storage is not affected by ionizing radiation) and combines the speed of SRAM with the non-volatility of flash.

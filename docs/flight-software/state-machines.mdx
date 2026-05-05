@@ -5,8 +5,168 @@ sidebar_label: State Machines
 sidebar_position: 4
 ---
 
-# State Machines
+# State Machines in Flight Software
 
-*Full content coming soon. This page is part of the Flight Software section.*
+Hierarchical Finite State Machines (HFSMs) are the primary control structure in flight software. Every spacecraft has a mission mode — from launch vehicle separation through mission operations through decommission — and transitions between modes must be deterministic, auditable, and safe.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Why State Machines in Space
+
+- **Determinism**: given the current state and inputs, the next state is always known
+- **Auditability**: ground operators can verify which state the spacecraft is in by reading telemetry
+- **Safety**: invalid transitions are impossible by construction
+- **Testability**: every state and transition can be unit tested in isolation
+
+---
+
+## Spacecraft Mode Hierarchy
+
+```
+LAUNCH
+  └─▶ INITIALIZATION
+        └─▶ NORMAL OPS
+              ├─▶ SCIENCE MODE
+              ├─▶ MANEUVER MODE
+              ├─▶ ECLIPSE MODE
+              └─▶ SAFE MODE
+                    └─▶ SURVIVAL MODE
+                          └─▶ (ground intervention)
+```
+
+Parent states define inherited behavior. A spacecraft in SCIENCE MODE is also in NORMAL OPS — it inherits health monitoring and comms from the parent.
+
+---
+
+## State Definition Pattern
+
+```c
+typedef enum {
+    MODE_INIT        = 0,
+    MODE_NORMAL      = 1,
+    MODE_SCIENCE     = 2,
+    MODE_MANEUVER    = 3,
+    MODE_SAFE        = 4,
+    MODE_SURVIVAL    = 5,
+    MODE_COUNT
+} SpacecraftMode_t;
+
+typedef struct {
+    SpacecraftMode_t current;
+    SpacecraftMode_t previous;
+    uint32_t         entry_time_tai;
+    uint32_t         time_in_mode_s;
+} ModeState_t;
+```
+
+---
+
+## Transition Table
+
+Define valid transitions explicitly. Anything not in the table is rejected:
+
+```c
+typedef struct {
+    SpacecraftMode_t from;
+    SpacecraftMode_t to;
+    bool (*guard)(void);        // Returns true if transition is allowed
+    void (*action)(void);       // Execute on transition
+} Transition_t;
+
+static const Transition_t transitions[] = {
+    { MODE_INIT,     MODE_NORMAL,   init_complete,        enter_normal_ops  },
+    { MODE_NORMAL,   MODE_SCIENCE,  science_ready,        enable_payload    },
+    { MODE_SCIENCE,  MODE_NORMAL,   science_complete,     disable_payload   },
+    { MODE_NORMAL,   MODE_SAFE,     fault_detected,       enter_safe_mode   },
+    { MODE_SCIENCE,  MODE_SAFE,     fault_detected,       enter_safe_mode   },
+    { MODE_SAFE,     MODE_NORMAL,   ground_cmd_received,  exit_safe_mode    },
+    { MODE_SAFE,     MODE_SURVIVAL, power_critical,       enter_survival    },
+};
+```
+
+---
+
+## State Machine Execution
+
+```c
+bool fsm_transition(ModeState_t *fsm, SpacecraftMode_t target) {
+    for (size_t i = 0; i < ARRAY_SIZE(transitions); i++) {
+        if (transitions[i].from == fsm->current &&
+            transitions[i].to   == target) {
+            if (transitions[i].guard && !transitions[i].guard()) {
+                log_event(EVT_TRANSITION_GUARD_FAIL, fsm->current, target);
+                return false;
+            }
+            fsm->previous = fsm->current;
+            fsm->current  = target;
+            fsm->entry_time_tai = get_tai();
+            if (transitions[i].action) {
+                transitions[i].action();
+            }
+            log_event(EVT_MODE_CHANGE, fsm->previous, fsm->current);
+            return true;
+        }
+    }
+    log_event(EVT_INVALID_TRANSITION, fsm->current, target);
+    return false;
+}
+```
+
+---
+
+## Entry and Exit Actions
+
+Each state has entry and exit actions that execute exactly once per transition:
+
+| State | Entry Action | Exit Action |
+|-------|-------------|-------------|
+| NORMAL | Enable attitude control, start HK telemetry | — |
+| SCIENCE | Power on payload, open data recorder | Power off payload |
+| SAFE | Disable non-essential loads, increase contact requests | — |
+| SURVIVAL | Disable everything except radio and computer | Restore power plan |
+
+---
+
+## Mode Telemetry
+
+Always downlink the current mode in housekeeping. Ground operators must never have to guess the mode:
+
+```c
+typedef struct {
+    uint8_t  current_mode;
+    uint8_t  previous_mode;
+    uint32_t time_in_mode_s;
+    uint16_t mode_change_count;
+    uint16_t rejected_transition_count;
+} ModeTlm_t;
+```
+
+---
+
+## Testing State Machines
+
+Each state and transition should have a unit test:
+
+```c
+void test_safe_mode_entry(void) {
+    ModeState_t fsm = { .current = MODE_NORMAL };
+
+    // Simulate fault
+    inject_fault(FAULT_POWER_UNDERVOLT);
+
+    // Trigger FSM step
+    fsm_step(&fsm);
+
+    assert(fsm.current == MODE_SAFE);
+    assert(fsm.previous == MODE_NORMAL);
+}
+```
+
+---
+
+## Key References
+
+- [Safe Mode FSM Implementation](../synthesis/safe-mode-fsm)
+- [Fault Management](./fault-management)
+- [Health & Safety Monitoring](./health-safety)
+- [Flight Software Overview](./overview)

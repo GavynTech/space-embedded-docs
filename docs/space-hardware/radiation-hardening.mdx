@@ -7,6 +7,113 @@ sidebar_position: 3
 
 # Radiation Hardening
 
-*Full content coming soon. This page is part of the Space Hardware section.*
+Radiation hardening is the combination of hardware selection, circuit design, and software techniques that make a spacecraft system survive the space radiation environment. As a software engineer, you implement the software side: ECC, scrubbing, TMR, and fault detection.
 
-See the [overview](./overview) for what this page covers.
+---
+
+## Hardware-Level Hardening
+
+**Radiation-Hardened (Rad-Hard) Parts**
+Manufactured with special processes (SOI — silicon on insulator, SOS — silicon on sapphire) that eliminate the parasitic structures causing latchup. The transistors themselves are more resistant to total dose degradation.
+
+| Processor | Architecture | Notes |
+|---|---|---|
+| RAD750 | PowerPC 750 | Most widely used space processor. $200k+. Voyager, Curiosity, Parker Solar Probe. |
+| RAD5545 | PowerPC e500 | Quad-core, higher performance, more modern |
+| LEON3-FT | SPARC V8 | ESA standard, open-source IP, used in Rosetta, BepiColombo |
+| UT699 | SPARC V8 | Aeroflex, space-qualified LEON2 |
+| SAMRH71 | ARM Cortex-M7 | Microchip, newer rad-hard ARM, ~$5k |
+
+**Radiation-Tolerant Parts**
+COTS parts screened or characterized for radiation performance but not manufactured with rad-hard processes. Much cheaper. Used in LEO CubeSats where the radiation environment is less severe.
+
+---
+
+## ECC — Error Correcting Code
+
+ECC adds redundant bits to each memory word so single-bit errors can be corrected and double-bit errors detected without correction.
+
+**SECDED** (Single Error Correct, Double Error Detect) is the standard: adds 7–8 check bits to a 32 or 64-bit data word. The hardware implements it transparently — a read that encounters a 1-bit error returns the corrected value and sets an error flag in a status register.
+
+```c
+// The software interface: check EDAC status registers after operations
+#define EDAC_CE_BIT   (1U << 0)   // correctable error
+#define EDAC_UE_BIT   (1U << 1)   // uncorrectable error
+
+void edac_service_errors(void) {
+    uint32_t status = EDAC_STATUS_REG;
+
+    if (status & EDAC_CE_BIT) {
+        edac_ce_count++;
+        edac_last_ce_addr = EDAC_FAILING_ADDR_REG;
+        EDAC_STATUS_REG = EDAC_CE_CLEAR;  // clear flag
+        log_event(EVENT_ECC_CE, edac_last_ce_addr, edac_ce_count);
+    }
+
+    if (status & EDAC_UE_BIT) {
+        fdir_report_anomaly(ANOMALY_ECC_UE, EDAC_FAILING_ADDR_REG);
+    }
+}
+```
+
+---
+
+## Memory Scrubbing
+
+ECC only corrects errors on reads. A bit that flips and is never read accumulates — a second flip in the same word creates an uncorrectable error. Scrubbing proactively reads (and thus corrects) all memory before multiple errors accumulate.
+
+See [ECC Memory Scrubber](../synthesis/ecc-memory-scrubber) for full implementation.
+
+**Scrub interval guideline:** Target less than 1 uncorrectable error per 10,000 hours.
+
+---
+
+## Triple Modular Redundancy (TMR)
+
+For the most critical values, store three copies and take the majority:
+
+```c
+// Critical spacecraft mode register — stored in triplicate
+typedef struct {
+    uint32_t a;
+    uint32_t pad_a[15];   // separate to different memory regions
+    uint32_t b;
+    uint32_t pad_b[15];
+    uint32_t c;
+} TMR_u32_t;
+
+uint32_t tmr_read(TMR_u32_t* r) {
+    if (r->a == r->b) return r->a;
+    if (r->a == r->c) return r->a;
+    if (r->b == r->c) { r->a = r->b; return r->b; }  // correct the outlier
+    fdir_report_anomaly(ANOMALY_TMR_FAIL, 0);
+    return r->a;  // all three disagree — best guess
+}
+```
+
+See [TMR Voter](../synthesis/tmr-voter) for the full implementation.
+
+---
+
+## FPGA Configuration Scrubbing
+
+FPGA configuration memory (bitstream) is especially vulnerable to SEUs because it controls the circuit topology — a single bit flip can change what the FPGA does, not just what data it holds.
+
+**Mitigation:**
+- Periodic reconfiguration from a known-good bitstream stored in protected flash
+- Internal scrubbing using Xilinx SEM (Soft Error Mitigation) core or Microsemi SmartFusion SEU detection
+- Readback comparison against golden bitstream
+
+---
+
+## Software Radiation Tolerance Checklist
+
+| Technique | What It Protects Against | Cost |
+|---|---|---|
+| ECC memory | SEU in SRAM | Hardware (check status in SW) |
+| Memory scrubbing task | Multi-bit errors from unread memory | ~1% CPU |
+| TMR for critical variables | SEU in key values | 3× memory, voting logic |
+| Watchdog timer | SEFi / software lockup | Minimal |
+| FDIR with safe mode | Any unrecoverable fault | Architecture |
+| Latchup protection circuit | SEL in subsystems | Hardware + SW current monitor |
+| FPGA scrubbing | SEU in FPGA config bits | Periodic reconfiguration |
