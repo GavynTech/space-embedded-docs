@@ -13,6 +13,38 @@ A spacecraft in orbit cannot call a support line. It cannot be rebooted by an op
 
 ---
 
+## Hardware Stack
+
+FDIR protects the physical hardware. Here's what it's watching:
+
+```
+[ IMU ]  [ Magnetometer ]  [ Reaction Wheels ]  [ Solar Panels / EPS ]
+   |              |                  |                      |
+   └──────────────┴──────────────────┴──────────────────────┘
+                              |
+                    [ OBC — On-Board Computer ]
+                    [ runs FreeRTOS tasks      ]
+                              |
+              ┌───────────────┴───────────────┐
+              │                               │
+        [ UART / SPI / I2C ]           [ CAN / SpaceWire ]
+        [ sensor buses     ]           [ subsystem buses  ]
+              |
+        [ Ground Radio / Comms ]
+```
+
+| Hardware | What Can Fail | FDIR Response |
+|----------|--------------|---------------|
+| IMU | no data, bad checksum | switch to backup, safe mode |
+| Magnetometer | out-of-range reading | isolate, use redundant sensor |
+| Reaction wheels | speed limit hit | desaturate, switch mode |
+| EPS / Solar | undervoltage | load shed, safe mode |
+| UART bus | transmit fails | retry 3x, reset peripheral |
+| Comms radio | ground link lost | beacon-only mode |
+| OBC memory | ECC uncorrectable | persist state, reset |
+
+---
+
 ## The Three Levels
 
 FDIR operates at three levels, each faster and more drastic than the last:
