@@ -254,6 +254,63 @@ See [Watchdog Patterns](../rtos/watchdog-patterns) for multi-level watchdog arch
 
 ---
 
+## Built-In Test (BIT)
+
+BIT is how hardware knows it's failing before it fully fails — no external test equipment needed.
+
+### Passive BIT
+Monitors system performance continuously in the background without interrupting operation.
+
+```c
+// Passive BIT — health check called from watchdog task
+bool is_imu_task_healthy(void) {
+    // Check last IMU sample timestamp — stale data = failure
+    uint64_t now = get_mission_time_us();
+    return (now - imu_last_sample_us) < IMU_TIMEOUT_US;
+}
+
+bool is_adcs_task_healthy(void) {
+    return adcs_heartbeat_counter != adcs_last_heartbeat;
+}
+```
+
+### Active BIT
+Writes a known test pattern, reads it back, confirms the hardware responds correctly. Interrupts normal operation — run only when the module is idle.
+
+```c
+// Active BIT — test UART loopback on startup
+bool uart_self_test(void) {
+    const uint8_t test_pattern[] = { 0xA5, 0x5A, 0xFF, 0x00 };
+    uint8_t rx_buf[4] = {0};
+
+    // Enable loopback mode on UART peripheral
+    uart_set_loopback(true);
+
+    if (uart_transmit(test_pattern, 4, UART_TIMEOUT_MS) != UART_OK) {
+        uart_set_loopback(false);
+        return false;
+    }
+    if (uart_receive(rx_buf, 4, UART_TIMEOUT_MS) != UART_OK) {
+        uart_set_loopback(false);
+        return false;
+    }
+
+    uart_set_loopback(false);
+    return memcmp(test_pattern, rx_buf, 4) == 0;
+}
+```
+
+### Centralized vs Decentralized
+
+| Architecture | How it works | Best for |
+|---|---|---|
+| Centralized | One FDIR task watches everything | Small cubesats, simple FSW |
+| Decentralized | Each subsystem self-tests, reports up | Large spacecraft, redundant buses |
+
+For most cubesats, centralized is correct — one `vFDIR_Task` receiving reports from all components via a queue.
+
+---
+
 ## FDIR Design Principles
 
 **1. Conservative by default.** When in doubt, go to safe mode. A ground operator can recover a spacecraft in safe mode. They may not be able to recover a spacecraft that suffered damage because FDIR kept running a failing system.
